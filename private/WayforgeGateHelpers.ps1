@@ -236,6 +236,12 @@ function Get-WayforgeActionContext {
     $context.ToolName = $ev.tool_name
     $context.Command  = $ev.tool_input.command
 
+    # Cursor's beforeShellExecution puts the command at the top level (no tool_input).
+    if (-not $context.Command -and $ev.command) {
+        $context.Command = $ev.command
+        if (-not $context.ToolName) { $context.ToolName = 'Bash' }
+    }
+
     $fp = $ev.tool_input.file_path
     if ($fp) {
         $rel = $fp -replace '\\', '/'
@@ -246,6 +252,67 @@ function Get-WayforgeActionContext {
         $context.Paths = @($rel)
     }
     return $context
+}
+
+function Get-WayforgeStages {
+    <#
+    .SYNOPSIS
+        Returns a hashtable set of the stages referenced by any gate's `on` list.
+    #>
+    param($Gates)
+
+    $stages = @{}
+    foreach ($gate in $Gates) {
+        foreach ($stage in @(Get-WayforgeField $gate 'on')) { if ($stage) { $stages[$stage] = $true } }
+    }
+    return $stages
+}
+
+function Get-WayforgeGateCommand {
+    <#
+    .SYNOPSIS
+        Builds the shell command a harness hook runs to invoke the shared gate
+        shim for a stage and dialect.
+    #>
+    param([string] $Stage, [string] $AsHook)
+    return "pwsh -NoProfile -File .workflow/hooks/gate.ps1 -Stage $Stage -AsHook $AsHook"
+}
+
+function Merge-WayforgeJsonHooks {
+    <#
+    .SYNOPSIS
+        Merges Wayforge-owned hook entries into a JSON hooks config, preserving
+        the user's other events/entries. Our entries (identified by a marker in
+        their serialized form, e.g. 'gate.ps1') are refreshed idempotently.
+    #>
+    param(
+        [string] $Path,
+        [hashtable] $OwnedByEvent,
+        [string] $Marker = 'gate.ps1',
+        [switch] $TopLevelVersion
+    )
+
+    $doc = @{}
+    if (Test-Path $Path -PathType Leaf) {
+        try { $doc = Get-Content $Path -Raw | ConvertFrom-Json -AsHashtable }
+        catch { Write-Warning "Existing '$Path' is not valid JSON; it will be replaced."; $doc = @{} }
+    }
+    if ($null -eq $doc) { $doc = @{} }
+    if ($TopLevelVersion -and -not $doc.ContainsKey('version')) { $doc['version'] = 1 }
+    if ($doc['hooks'] -isnot [System.Collections.IDictionary]) { $doc['hooks'] = @{} }
+
+    foreach ($event in $OwnedByEvent.Keys) {
+        $kept = foreach ($entry in (@($doc['hooks'][$event]) | Where-Object { $_ })) {
+            if (($entry | ConvertTo-Json -Depth 10 -Compress) -match [regex]::Escape($Marker)) { continue }
+            $entry
+        }
+        $doc['hooks'][$event] = @(@($kept) + @($OwnedByEvent[$event])) | Where-Object { $_ }
+    }
+
+    $parent = Split-Path -Parent $Path
+    if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    ($doc | ConvertTo-Json -Depth 12) | Set-Content -Path $Path -Encoding utf8NoBOM
+    return $Path
 }
 
 function ConvertTo-WayforgeArgList {
