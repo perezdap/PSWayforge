@@ -13,8 +13,15 @@ function Register-WayforgeHooks {
 
     .PARAMETER ProjectPath
         A path inside the target repository. Defaults to the current directory.
+
+    .EXAMPLE
+        Register-WayforgeHooks
+
+        Installs the gate shim and git hooks in the current repository and points
+        git at them via core.hooksPath.
     #>
     [CmdletBinding(SupportsShouldProcess)]
+    [OutputType('PSWayforge.HookRegistration')]
     param([string] $ProjectPath = (Get-Location).Path)
 
     $root = Resolve-WayforgeGitRoot -Path $ProjectPath
@@ -41,6 +48,18 @@ exec pwsh -NoProfile -File "`$root/.workflow/hooks/gate.ps1" -Stage $stage -AsHo
         if ($PSCmdlet.ShouldProcess($path, 'Write git hook shim')) {
             [System.IO.File]::WriteAllText($path, $shim, $utf8NoBom)
             if (-not $IsWindows) { & chmod +x $path }
+        }
+    }
+
+    # Track the executable bit in git so Unix clones get runnable hooks even when
+    # authored on Windows (git silently skips non-executable hooks on Unix). This
+    # stages the shims with mode 100755; they are meant to be committed.
+    if ($PSCmdlet.ShouldProcess($root, 'Track hook shims as executable (git update-index --chmod=+x)')) {
+        try {
+            & git -C $root update-index --add --chmod=+x '.workflow/githooks/pre-commit' '.workflow/githooks/pre-push' 2>$null
+        }
+        catch {
+            Write-Warning "Could not set the tracked executable bit on the git hooks: $($_.Exception.Message)"
         }
     }
 

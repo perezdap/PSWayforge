@@ -19,8 +19,15 @@ function Register-WayforgeCI {
 
     .PARAMETER Provider
         The CI provider to target. Currently 'github' (GitHub Actions).
+
+    .EXAMPLE
+        Register-WayforgeCI
+
+        Writes .github/workflows/wayforge-gate.yml so the same gates run as a
+        pull-request check. Make it a required check via branch protection.
     #>
     [CmdletBinding(SupportsShouldProcess)]
+    [OutputType('PSWayforge.CIRegistration')]
     param(
         [string] $ProjectPath = (Get-Location).Path,
 

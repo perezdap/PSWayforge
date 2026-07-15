@@ -110,6 +110,19 @@ Describe 'Register-WayforgeHooks' {
         finally { Pop-Location }
     }
 
+    It 'tracks the git hook shims as executable (mode 100755)' {
+        $p = Join-Path $TestDrive 'execbit'
+        New-Item -ItemType Directory -Path $p -Force | Out-Null
+        Push-Location $p
+        try {
+            git init -q
+            Register-WayforgeHooks -ProjectPath $p | Out-Null
+            $entry = git ls-files --stage .workflow/githooks/pre-commit
+            (($entry -split '\s+')[0]) | Should -Be '100755'
+        }
+        finally { Pop-Location }
+    }
+
     It 'throws when the path is not a git repository' {
         $p = Join-Path $TestDrive 'notgit'
         New-Item -ItemType Directory -Path $p -Force | Out-Null
@@ -170,6 +183,42 @@ gates:
 
             $r.Blocked | Should -BeTrue
             ($r.Results | Where-Object Id -eq 'no-edit-dotenv').Status | Should -Be 'fail'
+        }
+        finally { Pop-Location }
+    }
+
+    It 'falls back to the full tree when the base ref is unreachable' {
+        $p = Join-Path $TestDrive 'cifallback'
+        New-Item -ItemType Directory -Path (Join-Path $p '.workflow/definitions') -Force | Out-Null
+        @'
+apiVersion: wayforge/v2
+name: default
+gates:
+  - id: no-edit-dotenv
+    description: Never commit dotenv files
+    on:
+      - ci
+    when: always
+    severity: block
+    check:
+      forbid:
+        path:
+          - "**/.env"
+'@ | Set-Content (Join-Path $p '.workflow/definitions/default.yaml') -Encoding utf8NoBOM
+
+        Push-Location $p
+        try {
+            git init -q
+            git config user.email 'a@b.c'; git config user.name 'test'
+            'x' | Set-Content base.txt -Encoding utf8NoBOM
+            'SECRET=1' | Set-Content .env -Encoding utf8NoBOM
+            git add -A; git commit -q -m init
+
+            $env:WAYFORGE_BASE_REF = 'origin/does-not-exist'
+            try { $r = Invoke-WayforgeGate -Stage ci -AsHook ci -ProjectPath $p }
+            finally { Remove-Item Env:WAYFORGE_BASE_REF -ErrorAction SilentlyContinue }
+
+            $r.Blocked | Should -BeTrue      # .env found via full-tree fallback
         }
         finally { Pop-Location }
     }

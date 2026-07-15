@@ -17,8 +17,15 @@ function Sync-WayforgeHarness {
 
     .PARAMETER WorkflowName
         A single workflow definition to project. Defaults to all definitions.
+
+    .EXAMPLE
+        Sync-WayforgeHarness -Harness claude
+
+        Ensures the shared gate shim exists and (re)generates .claude/settings.json
+        from the workflow's gates.
     #>
     [CmdletBinding()]
+    [OutputType('PSWayforge.HarnessSync')]
     param(
         [ValidateSet('claude')]
         [string[]] $Harness = @('claude'),

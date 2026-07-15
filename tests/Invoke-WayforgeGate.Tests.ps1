@@ -85,4 +85,14 @@ Describe 'Invoke-WayforgeGate' {
         $r.Blocked | Should -BeFalse
         $r.Results | Should -BeNullOrEmpty
     }
+
+    It 'fails closed when a workflow definition cannot be parsed' {
+        $bad = Join-Path $TestDrive 'badworkflow'
+        New-Item -ItemType Directory -Path (Join-Path $bad '.workflow/definitions') -Force | Out-Null
+        'gates: [unclosed' | Set-Content (Join-Path $bad '.workflow/definitions/default.yaml') -Encoding utf8NoBOM
+
+        $r = Invoke-WayforgeGate -Stage pre-commit -AsHook git -ProjectPath $bad -ChangeSet @('foo.ps1')
+        $r.Blocked   | Should -BeTrue
+        $r.Results.Id | Should -Contain 'wayforge-engine-error'
+    }
 }

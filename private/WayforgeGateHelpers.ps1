@@ -70,6 +70,26 @@ function Resolve-WayforgeGitRoot {
     return $p
 }
 
+function Get-WayforgeDefaultBase {
+    <#
+    .SYNOPSIS
+        Resolves the CI base ref: the remote's default branch, else origin/main
+        or origin/master if present. Callers fall back to the full tree if the
+        returned ref is unreachable.
+    #>
+    param([string] $Root)
+
+    $ref = & git -C $Root symbolic-ref --quiet refs/remotes/origin/HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $ref) {
+        return ($ref -replace '^refs/remotes/', '').Trim()
+    }
+    foreach ($candidate in 'origin/main', 'origin/master') {
+        & git -C $Root rev-parse --verify --quiet $candidate > $null 2>&1
+        if ($LASTEXITCODE -eq 0) { return $candidate }
+    }
+    return 'origin/main'
+}
+
 function Convert-WayforgeGlobToRegex {
     <#
     .SYNOPSIS
@@ -168,8 +188,13 @@ function Get-WayforgeChangeSet {
             return @($files | Select-Object -Unique)
         }
         'ci' {
-            $base = if ($env:WAYFORGE_BASE_REF) { $env:WAYFORGE_BASE_REF } else { 'origin/main' }
+            $base = if ($env:WAYFORGE_BASE_REF) { $env:WAYFORGE_BASE_REF } else { Get-WayforgeDefaultBase -Root $Root }
             $out = & git -C $Root diff --name-only "$base...HEAD" 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                # Base unreachable: fall back to the full tracked tree so gates
+                # still evaluate (fail-safe) instead of an empty diff (fail-open).
+                $out = & git -C $Root ls-files 2>$null
+            }
             return @($out | Where-Object { $_ })
         }
         default {
@@ -281,7 +306,7 @@ function Invoke-WayforgeCheck {
 }
 
 function Write-WayforgeGateHuman {
-    param($Report)
+    param($Report, [switch] $ToStdout)
 
     $header = "Wayforge gate [$($Report.Stage)]: " + $(if ($Report.Blocked) { 'BLOCKED' } else { 'passed' })
     $lines = @($header)
@@ -293,7 +318,8 @@ function Write-WayforgeGateHuman {
         if ($r.Detail) { $line += " - $($r.Detail)" }
         $lines += $line
     }
-    [Console]::Error.WriteLine(($lines -join "`n"))
+    $text = $lines -join "`n"
+    if ($ToStdout) { [Console]::Out.WriteLine($text) } else { [Console]::Error.WriteLine($text) }
 }
 
 function Write-WayforgeGateDialect {
@@ -334,8 +360,13 @@ function Write-WayforgeGateDialect {
             }
             return 0
         }
+        'ci' {
+            # CI: human-readable report to stdout so it lands in the job log.
+            Write-WayforgeGateHuman -Report $Report -ToStdout
+            return [int][bool]$blocked
+        }
         default {
-            # git, ci, none: human-readable to stderr; nonzero exit blocks.
+            # git, none: human-readable to stderr; nonzero exit blocks.
             Write-WayforgeGateHuman -Report $Report
             return [int][bool]$blocked
         }
