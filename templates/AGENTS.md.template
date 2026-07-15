@@ -1,0 +1,24 @@
+# {{PROJECT_NAME}}
+
+Agent workspace for **{{PROJECT_NAME}}**.
+
+## Single source of truth
+
+- `AGENTS.md` — this file.
+- `.agents/` — reusable skills and project-specific agent instructions.
+- `.workflow/` — workflow definitions, lifecycle hooks, and artifact schemas.
+
+## Conventions
+
+- Keep agent skills in `.agents/skills/<name>/SKILL.md`.
+- Define workflows in `.workflow/definitions/<name>.yaml`.
+- Validate artifacts against `.workflow/schemas/<name>.json` using `Test-WayforgeSchema`.
+- Run lifecycle hooks from `.workflow/hooks/<name>.ps1` using `Invoke-WayforgeHook`.
+
+## Getting started
+
+1. Review the example skill in `.agents/skills/example/SKILL.md`.
+2. Review the default workflow in `.workflow/definitions/default.yaml`.
+3. Inspect the example schema in `.workflow/schemas/example.json`.
+
+_This file was scaffolded by PSWayforge. Expand it as the project evolves._

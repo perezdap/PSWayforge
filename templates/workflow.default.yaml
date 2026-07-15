@@ -1,0 +1,34 @@
+name: default
+description: A minimal agent workflow for scouting context, planning, and building.
+version: 1.0.0
+
+steps:
+  - id: scout
+    name: Scout Context
+    description: Read AGENTS.md, skills, and existing code to understand the task.
+    outputs:
+      - artifact: scout-report.json
+        schema: example
+
+  - id: plan
+    name: Plan
+    description: Produce a plan artifact that defines the approach and acceptance criteria.
+    inputs:
+      - artifact: scout-report.json
+        schema: example
+    outputs:
+      - artifact: plan.json
+        schema: example
+
+  - id: build
+    name: Build
+    description: Implement the plan and validate artifacts against schemas.
+    inputs:
+      - artifact: plan.json
+        schema: example
+    hooks:
+      pre: pre-build
+      post: post-build
+
+on_complete:
+  - hook: done

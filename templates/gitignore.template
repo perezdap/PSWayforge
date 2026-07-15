@@ -1,0 +1,12 @@
+# PSWayforge default gitignore
+
+# Agent caches
+.agents/cache/
+
+# Workflow caches and outputs
+.workflow/cache/
+.workflow/outputs/
+
+# OS files
+.DS_Store
+Thumbs.db

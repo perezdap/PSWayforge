@@ -1,0 +1,82 @@
+BeforeAll {
+    $script:ModuleRoot = Split-Path -Parent $PSScriptRoot
+    $script:ManifestPath = Join-Path -Path $ModuleRoot -ChildPath 'PSWayforge.psd1'
+
+    if (-not (Test-Path -Path $ManifestPath)) {
+        throw "PSWayforge module manifest not found at '$ManifestPath'. Implement the foundation scope before running these tests."
+    }
+
+    Import-Module -Name $ManifestPath -Force
+}
+
+AfterAll {
+    Remove-Module -Name PSWayforge -Force -ErrorAction SilentlyContinue
+}
+
+Describe 'New-WayforgeProject' {
+    BeforeEach {
+        Get-ChildItem -Path $TestDrive -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'creates a new project directory' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject' | Should -Exist
+    }
+
+    It 'creates AGENTS.md at the project root' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/AGENTS.md' | Should -Exist
+    }
+
+    It 'creates the .agents and .workflow directories' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.agents' | Should -Exist
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.workflow' | Should -Exist
+    }
+
+    It 'installs the example skill, default workflow, and example schema' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.agents/skills/example/SKILL.md' | Should -Exist
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.workflow/definitions/default.yaml' | Should -Exist
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.workflow/schemas/example.json' | Should -Exist
+    }
+
+    It 'creates a .gitignore and initializes a git repository when git is available' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
+
+        Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.gitignore' | Should -Exist
+
+        if (Get-Command -Name git -ErrorAction SilentlyContinue) {
+            Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.git' | Should -Exist
+        }
+    }
+
+    It 'warns and skips files when git is unavailable' {
+        $testProjectPath = Join-Path -Path $TestDrive -ChildPath 'WayforgeNoGitProject'
+
+        InModuleScope -ModuleName PSWayforge -Parameters @{ TestDrive = $TestDrive; TestProjectPath = $testProjectPath } {
+            Mock Get-Command { return $null } -ParameterFilter { $Name -eq 'git' }
+
+            New-WayforgeProject -Name 'WayforgeNoGitProject' -Path $TestDrive -WarningVariable warnings -WarningAction SilentlyContinue | Out-Null
+
+            $warnings | Should -Not -BeNullOrEmpty
+            $testProjectPath | Should -Exist
+            Join-Path -Path $testProjectPath -ChildPath '.git' | Should -Not -Exist
+        }
+    }
+
+    It 'is additive only when -InitializeExisting is used and does not overwrite existing files' {
+        $testProjectPath = Join-Path -Path $TestDrive -ChildPath 'WayforgeExistingProject'
+        New-Item -ItemType Directory -Path $testProjectPath | Out-Null
+        $agentsPath = Join-Path -Path $testProjectPath -ChildPath 'AGENTS.md'
+        'existing agents content' | Set-Content -Path $agentsPath -NoNewline
+
+        $warnings = $null
+        New-WayforgeProject -Name 'WayforgeExistingProject' -Path $TestDrive -InitializeExisting -WarningAction SilentlyContinue -WarningVariable warnings | Out-Null
+
+        Get-Content -Path $agentsPath -Raw | Should -Be 'existing agents content'
+        Join-Path -Path $testProjectPath -ChildPath '.gitignore' | Should -Exist
+        $warnings | Should -Not -BeNullOrEmpty
+    }
+}
