@@ -13,6 +13,7 @@
         'Invoke-WayforgeHook'
         'Test-WayforgeSchema'
         'Get-WayforgeWorkflow'
+        'Invoke-WayforgeGate'
     )
     CmdletsToExport      = @()
     VariablesToExport    = @()
