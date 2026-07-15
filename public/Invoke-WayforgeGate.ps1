@@ -56,32 +56,9 @@ function Invoke-WayforgeGate {
 
     $root = Resolve-WayforgeGitRoot -Path $ProjectPath
 
-    # Collect gates and scopes from the selected workflow definition(s).
-    $definitionsDir = Join-Path $root '.workflow/definitions'
-    $names = if ($WorkflowName) {
-        , $WorkflowName
-    }
-    elseif (Test-Path $definitionsDir) {
-        Get-ChildItem -Path $definitionsDir -Filter '*.yaml' | ForEach-Object { $_.BaseName }
-    }
-    else {
-        @()
-    }
-
-    $gates  = [System.Collections.Generic.List[object]]::new()
-    $scopes = @{}
-    foreach ($name in $names) {
-        $wf = Get-WayforgeWorkflow -Name $name -ProjectPath $root
-
-        $wfScopes = Get-WayforgeField $wf 'scopes'
-        if ($wfScopes -is [System.Collections.IDictionary]) {
-            foreach ($key in $wfScopes.Keys) { $scopes[$key] = @(Get-WayforgeField $wfScopes $key) }
-        }
-
-        foreach ($gate in @(Get-WayforgeField $wf 'gates')) {
-            if ($null -ne $gate) { $gates.Add($gate) }
-        }
-    }
+    $set    = Get-WayforgeGateSet -Root $root -WorkflowName $WorkflowName
+    $gates  = $set.Gates
+    $scopes = $set.Scopes
 
     if (-not $PSBoundParameters.ContainsKey('ChangeSet')) {
         $ChangeSet = Get-WayforgeChangeSet -Stage $Stage -Root $root -EventJson $EventJson
@@ -103,7 +80,7 @@ function Invoke-WayforgeGate {
             continue
         }
 
-        $eval   = Invoke-WayforgeCheck -Check $check -Root $root -Description $desc
+        $eval   = Invoke-WayforgeCheck -Check $check -Root $root -Description $desc -ChangeSet $ChangeSet
         $status = if ($eval.Ok) { 'pass' } elseif ($severity -eq 'warn') { 'warn' } else { 'fail' }
         $results.Add((New-WayforgeGateResult -Id $id -Severity $severity -Status $status -Message $eval.Message -Detail $eval.Detail)) | Out-Null
     }

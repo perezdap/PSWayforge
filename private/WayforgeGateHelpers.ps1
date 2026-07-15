@@ -19,6 +19,42 @@ function Get-WayforgeField {
     return $Default
 }
 
+function Get-WayforgeGateSet {
+    <#
+    .SYNOPSIS
+        Loads the gates and scopes from the selected workflow definition(s).
+    #>
+    param([string] $Root, [string] $WorkflowName)
+
+    $definitionsDir = Join-Path $Root '.workflow/definitions'
+    $names = if ($WorkflowName) {
+        , $WorkflowName
+    }
+    elseif (Test-Path $definitionsDir) {
+        Get-ChildItem -Path $definitionsDir -Filter '*.yaml' | ForEach-Object { $_.BaseName }
+    }
+    else {
+        @()
+    }
+
+    $gates  = [System.Collections.Generic.List[object]]::new()
+    $scopes = @{}
+    foreach ($name in $names) {
+        $wf = Get-WayforgeWorkflow -Name $name -ProjectPath $Root
+
+        $wfScopes = Get-WayforgeField $wf 'scopes'
+        if ($wfScopes -is [System.Collections.IDictionary]) {
+            foreach ($key in $wfScopes.Keys) { $scopes[$key] = @(Get-WayforgeField $wfScopes $key) }
+        }
+
+        foreach ($gate in @(Get-WayforgeField $wf 'gates')) {
+            if ($null -ne $gate) { $gates.Add($gate) }
+        }
+    }
+
+    return [PSCustomObject]@{ Gates = $gates.ToArray(); Scopes = $scopes }
+}
+
 function Resolve-WayforgeGitRoot {
     <#
     .SYNOPSIS
@@ -187,10 +223,10 @@ function Invoke-WayforgeRunCheck {
 function Invoke-WayforgeCheck {
     <#
     .SYNOPSIS
-        Evaluates one gate `check` (requires_artifact | run) and returns
+        Evaluates one gate `check` (requires_artifact | run | forbid) and returns
         an object with Ok/Message/Detail.
     #>
-    param($Check, [string] $Root, [string] $Description)
+    param($Check, [string] $Root, [string] $Description, [string[]] $ChangeSet)
 
     if ($null -eq $Check) {
         return [PSCustomObject]@{ Ok = $true; Message = $Description; Detail = 'no check' }
@@ -198,6 +234,19 @@ function Invoke-WayforgeCheck {
 
     $artifact = Get-WayforgeField $Check 'requires_artifact'
     $run      = Get-WayforgeField $Check 'run'
+    $forbid   = Get-WayforgeField $Check 'forbid'
+
+    if ($forbid) {
+        $paths = @(Get-WayforgeField $forbid 'path')
+        foreach ($file in $ChangeSet) {
+            foreach ($glob in $paths) {
+                if (Test-WayforgeGlobMatch -Path $file -Glob $glob) {
+                    return [PSCustomObject]@{ Ok = $false; Message = $Description; Detail = "forbidden path '$file' (matches '$glob')" }
+                }
+            }
+        }
+        return [PSCustomObject]@{ Ok = $true; Message = $Description; Detail = 'no forbidden paths touched' }
+    }
 
     if ($artifact) {
         $schema  = Get-WayforgeField $Check 'schema'
