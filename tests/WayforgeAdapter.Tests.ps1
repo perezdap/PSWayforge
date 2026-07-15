@@ -116,3 +116,61 @@ Describe 'Register-WayforgeHooks' {
         { Register-WayforgeHooks -ProjectPath $p } | Should -Throw
     }
 }
+
+Describe 'Register-WayforgeCI' {
+    It 'generates a GitHub Actions gate workflow' {
+        $p = Join-Path $TestDrive 'ciproj'
+        New-Item -ItemType Directory -Path $p -Force | Out-Null
+        Register-WayforgeCI -ProjectPath $p | Out-Null
+
+        $wf = Join-Path $p '.github/workflows/wayforge-gate.yml'
+        $wf | Should -Exist
+        $raw = Get-Content $wf -Raw
+        $raw | Should -Match 'name:\s*wayforge-gate'
+        $raw | Should -Match 'Invoke-WayforgeGate -Stage ci'
+        $raw | Should -Match 'fetch-depth:\s*0'
+        ($raw -match "`r") | Should -BeFalse       # LF for portability
+    }
+}
+
+Describe 'ci stage' {
+    It 'blocks a forbidden path found in the base...HEAD diff' {
+        $p = Join-Path $TestDrive 'cigate'
+        New-Item -ItemType Directory -Path (Join-Path $p '.workflow/definitions') -Force | Out-Null
+        @'
+apiVersion: wayforge/v2
+name: default
+gates:
+  - id: no-edit-dotenv
+    description: Never commit dotenv files
+    on:
+      - ci
+    when: always
+    severity: block
+    check:
+      forbid:
+        path:
+          - "**/.env"
+'@ | Set-Content (Join-Path $p '.workflow/definitions/default.yaml') -Encoding utf8NoBOM
+
+        Push-Location $p
+        try {
+            git init -q
+            git config user.email 'a@b.c'; git config user.name 'test'
+            'base' | Set-Content base.txt -Encoding utf8NoBOM
+            git add base.txt; git commit -q -m base
+            $base = (git rev-parse HEAD).Trim()
+
+            'SECRET=1' | Set-Content .env -Encoding utf8NoBOM
+            git add -f .env; git commit -q -m env
+
+            $env:WAYFORGE_BASE_REF = $base
+            try { $r = Invoke-WayforgeGate -Stage ci -AsHook ci -ProjectPath $p }
+            finally { Remove-Item Env:WAYFORGE_BASE_REF -ErrorAction SilentlyContinue }
+
+            $r.Blocked | Should -BeTrue
+            ($r.Results | Where-Object Id -eq 'no-edit-dotenv').Status | Should -Be 'fail'
+        }
+        finally { Pop-Location }
+    }
+}

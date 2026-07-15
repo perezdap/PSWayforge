@@ -31,6 +31,11 @@ function New-WayforgeProject {
         workspace is still scaffolded; run Register-WayforgeHooks and
         Sync-WayforgeHarness later to enable enforcement.
 
+    .PARAMETER WithCI
+        Also generate the CI gate workflow (.github/workflows/wayforge-gate.yml)
+        so the same gates enforce at merge time. Requires branch protection to
+        become a required check.
+
     .EXAMPLE
         New-WayforgeProject -Name MyProject -Path C:\Projects
 
@@ -56,7 +61,9 @@ function New-WayforgeProject {
         [ValidateSet('claude')]
         [string[]]$Harness = @('claude'),
 
-        [switch]$SkipEnforcement
+        [switch]$SkipEnforcement,
+
+        [switch]$WithCI
     )
 
     begin {
@@ -143,6 +150,7 @@ function New-WayforgeProject {
                     try {
                         Register-WayforgeHooks -ProjectPath $projectRoot | Out-Null
                         Sync-WayforgeHarness -Harness $Harness -ProjectPath $projectRoot | Out-Null
+                        if ($WithCI) { Register-WayforgeCI -ProjectPath $projectRoot | Out-Null }
                         $enforced = $true
                     }
                     catch {

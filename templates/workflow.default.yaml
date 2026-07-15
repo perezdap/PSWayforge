@@ -51,6 +51,7 @@ gates:
     on:
       - pre-tool
       - pre-commit
+      - ci
     when: always
     severity: block
     check:

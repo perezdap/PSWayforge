@@ -15,6 +15,7 @@
         'Get-WayforgeWorkflow'
         'Invoke-WayforgeGate'
         'Register-WayforgeHooks'
+        'Register-WayforgeCI'
         'Sync-WayforgeHarness'
     )
     CmdletsToExport      = @()
