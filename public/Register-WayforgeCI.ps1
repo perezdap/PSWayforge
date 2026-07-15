@@ -40,7 +40,11 @@ function Register-WayforgeCI {
     switch ($Provider) {
         'github' {
             $workflowDir = Join-Path $root '.github/workflows'
-            if (-not (Test-Path $workflowDir)) { New-Item -ItemType Directory -Path $workflowDir -Force | Out-Null }
+            if (-not (Test-Path $workflowDir)) {
+                if ($PSCmdlet.ShouldProcess($workflowDir, 'Create workflows directory')) {
+                    New-Item -ItemType Directory -Path $workflowDir -Force | Out-Null
+                }
+            }
             $path = Join-Path $workflowDir 'wayforge-gate.yml'
 
             $content = @'

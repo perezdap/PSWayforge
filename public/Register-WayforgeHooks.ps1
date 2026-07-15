@@ -31,10 +31,16 @@ function Register-WayforgeHooks {
         throw "Register-WayforgeHooks requires a git repository. '$root' is not one."
     }
 
-    Install-WayforgeGateShim -ProjectRoot $root | Out-Null
+    if ($PSCmdlet.ShouldProcess($root, 'Install gate shim (.workflow/hooks/gate.ps1)')) {
+        Install-WayforgeGateShim -ProjectRoot $root | Out-Null
+    }
 
     $ghDir = Join-Path $root '.workflow/githooks'
-    if (-not (Test-Path $ghDir)) { New-Item -ItemType Directory -Path $ghDir -Force | Out-Null }
+    if (-not (Test-Path $ghDir)) {
+        if ($PSCmdlet.ShouldProcess($ghDir, 'Create git hooks directory')) {
+            New-Item -ItemType Directory -Path $ghDir -Force | Out-Null
+        }
+    }
 
     $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
     foreach ($stage in 'pre-commit', 'pre-push') {

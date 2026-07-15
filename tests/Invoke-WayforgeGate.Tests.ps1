@@ -95,4 +95,10 @@ Describe 'Invoke-WayforgeGate' {
         $r.Blocked   | Should -BeTrue
         $r.Results.Id | Should -Contain 'wayforge-engine-error'
     }
+
+    It 'fails closed on a malformed pre-tool event payload' {
+        $r = Invoke-WayforgeGate -Stage pre-tool -AsHook claude -EventJson 'not json {' -ProjectPath $Project
+        $r.Blocked   | Should -BeTrue
+        $r.Results.Id | Should -Contain 'wayforge-engine-error'
+    }
 }

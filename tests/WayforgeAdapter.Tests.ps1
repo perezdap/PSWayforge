@@ -86,6 +86,120 @@ Describe 'Sync-WayforgeHarness (claude)' {
         $settings.permissions.deny | Should -Contain 'Edit(**/.env)'
         $settings.permissions.deny | Should -Contain 'Write(**/.env)'
     }
+
+    It 'preserves existing settings.json entries and is idempotent' {
+        $p = Join-Path $TestDrive 'mergeproj'
+        New-GateProject -Path $p
+        $claude = Join-Path $p '.claude'
+        New-Item -ItemType Directory -Path $claude -Force | Out-Null
+        @'
+{
+  "model": "claude-x",
+  "permissions": { "allow": ["Bash(ls)"], "deny": ["Edit(secret.txt)"] },
+  "hooks": { "PreToolUse": [ { "matcher": "Read", "hooks": [ { "type": "command", "command": "echo hi" } ] } ] }
+}
+'@ | Set-Content (Join-Path $claude 'settings.json') -Encoding utf8NoBOM
+
+        Sync-WayforgeHarness -Harness claude -ProjectPath $p | Out-Null
+        $s = Get-Content (Join-Path $claude 'settings.json') -Raw | ConvertFrom-Json
+
+        $s.model                | Should -Be 'claude-x'          # unrelated key preserved
+        $s.permissions.allow    | Should -Contain 'Bash(ls)'     # unrelated permission preserved
+        $s.permissions.deny     | Should -Contain 'Edit(secret.txt)'  # existing deny preserved
+        $s.permissions.deny     | Should -Contain 'Edit(**/.env)'     # ours added
+        ($s.hooks.PreToolUse | Where-Object { $_.matcher -eq 'Read' }) | Should -Not -BeNullOrEmpty  # user hook kept
+
+        # Idempotent: a second sync must not duplicate our gate.ps1 hook entry.
+        Sync-WayforgeHarness -Harness claude -ProjectPath $p | Out-Null
+        $s2 = Get-Content (Join-Path $claude 'settings.json') -Raw | ConvertFrom-Json
+        @($s2.hooks.PreToolUse | Where-Object { ($_.hooks.command -join '') -match 'gate\.ps1' }).Count | Should -Be 1
+    }
+}
+
+Describe 'forbid dimensions' {
+    It 'blocks a command-only rule at pre-tool when the command matches' {
+        $p = Join-Path $TestDrive 'cmdforbid'
+        New-Item -ItemType Directory -Path (Join-Path $p '.workflow/definitions') -Force | Out-Null
+        @'
+apiVersion: wayforge/v2
+name: default
+gates:
+  - id: no-force-push
+    description: Do not force-push
+    on:
+      - pre-tool
+    when: always
+    severity: block
+    check:
+      forbid:
+        command:
+          - "git push --force*"
+'@ | Set-Content (Join-Path $p '.workflow/definitions/default.yaml') -Encoding utf8NoBOM
+
+        $blockEvent = '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}'
+        $okEvent    = '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+
+        (Invoke-WayforgeGate -Stage pre-tool -AsHook claude -EventJson $blockEvent -ProjectPath $p).Blocked | Should -BeTrue
+        (Invoke-WayforgeGate -Stage pre-tool -AsHook claude -EventJson $okEvent    -ProjectPath $p).Blocked | Should -BeFalse
+    }
+
+    It 'honors the tool restriction: blocks Edit but allows Read of a forbidden path' {
+        $p = Join-Path $TestDrive 'toolforbid'
+        New-GateProject -Path $p    # no-edit-dotenv: tool [edit, write], path **/.env
+
+        $edit = '{"tool_name":"Edit","tool_input":{"file_path":".env"}}'
+        $read = '{"tool_name":"Read","tool_input":{"file_path":".env"}}'
+
+        (Invoke-WayforgeGate -Stage pre-tool -AsHook claude -EventJson $edit -ProjectPath $p).Blocked | Should -BeTrue
+        (Invoke-WayforgeGate -Stage pre-tool -AsHook claude -EventJson $read -ProjectPath $p).Blocked | Should -BeFalse
+    }
+}
+
+Describe 'pre-push changeset' {
+    It 'sees pushed files on a new branch instead of failing open' {
+        $p = Join-Path $TestDrive 'prepush'
+        New-Item -ItemType Directory -Path (Join-Path $p '.workflow/definitions') -Force | Out-Null
+        @'
+apiVersion: wayforge/v2
+name: default
+gates:
+  - id: no-edit-dotenv
+    description: Never push dotenv files
+    on:
+      - pre-push
+    when: always
+    severity: block
+    check:
+      forbid:
+        path:
+          - "**/.env"
+'@ | Set-Content (Join-Path $p '.workflow/definitions/default.yaml') -Encoding utf8NoBOM
+
+        Push-Location $p
+        try {
+            git init -q
+            git config user.email 'a@b.c'; git config user.name 'test'
+            'SECRET=1' | Set-Content .env -Encoding utf8NoBOM
+            git add -A; git commit -q -m init
+            $sha = (git rev-parse HEAD).Trim()
+            $zero = '0' * 40
+            $event = "refs/heads/feature $sha refs/heads/feature $zero"
+
+            $r = Invoke-WayforgeGate -Stage pre-push -AsHook git -EventJson $event -ProjectPath $p
+            $r.Blocked | Should -BeTrue     # .env seen via empty-tree diff, not fail-open
+        }
+        finally { Pop-Location }
+    }
+}
+
+Describe 'ConvertTo-WayforgeArgList' {
+    It 'splits quoted arguments without shell interpretation' {
+        InModuleScope PSWayforge {
+            $a = ConvertTo-WayforgeArgList -CommandLine 'foo "a b" c'
+            $a.Count | Should -Be 3
+            $a[1]    | Should -Be 'a b'
+        }
+    }
 }
 
 Describe 'Register-WayforgeHooks' {
@@ -127,6 +241,20 @@ Describe 'Register-WayforgeHooks' {
         $p = Join-Path $TestDrive 'notgit'
         New-Item -ItemType Directory -Path $p -Force | Out-Null
         { Register-WayforgeHooks -ProjectPath $p } | Should -Throw
+    }
+
+    It 'does not mutate the repository under -WhatIf' {
+        $p = Join-Path $TestDrive 'whatif'
+        New-Item -ItemType Directory -Path $p -Force | Out-Null
+        Push-Location $p
+        try {
+            git init -q
+            Register-WayforgeHooks -ProjectPath $p -WhatIf | Out-Null
+            Join-Path $p '.workflow/hooks/gate.ps1'      | Should -Not -Exist
+            Join-Path $p '.workflow/githooks/pre-commit' | Should -Not -Exist
+            (git config core.hooksPath) | Should -BeNullOrEmpty
+        }
+        finally { Pop-Location }
     }
 }
 

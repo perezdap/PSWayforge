@@ -79,8 +79,18 @@ function Invoke-WayforgeGate {
         $gates  = $set.Gates
         $scopes = $set.Scopes
 
+        $actionTool    = $null
+        $actionCommand = $null
         if (-not $PSBoundParameters.ContainsKey('ChangeSet')) {
-            $ChangeSet = Get-WayforgeChangeSet -Stage $Stage -Root $root -EventJson $EventJson
+            if ($Stage -in @('pre-tool', 'stop')) {
+                $ctx           = Get-WayforgeActionContext -EventJson $EventJson -Root $root
+                $ChangeSet     = $ctx.Paths
+                $actionTool    = $ctx.ToolName
+                $actionCommand = $ctx.Command
+            }
+            else {
+                $ChangeSet = Get-WayforgeChangeSet -Stage $Stage -Root $root -EventJson $EventJson
+            }
         }
 
         $results = [System.Collections.Generic.List[object]]::new()
@@ -99,7 +109,7 @@ function Invoke-WayforgeGate {
                 continue
             }
 
-            $eval   = Invoke-WayforgeCheck -Check $check -Root $root -Description $desc -ChangeSet $ChangeSet
+            $eval   = Invoke-WayforgeCheck -Check $check -Root $root -Description $desc -ChangeSet $ChangeSet -ToolName $actionTool -Command $actionCommand
             $status = if ($eval.Ok) { 'pass' } elseif ($severity -eq 'warn') { 'warn' } else { 'fail' }
             $results.Add((New-WayforgeGateResult -Id $id -Severity $severity -Status $status -Message $eval.Message -Detail $eval.Detail)) | Out-Null
         }

@@ -58,14 +58,42 @@ function Write-WayforgeClaudeAdapter {
         )
     }
 
-    $settings = [ordered]@{}
-    if ($denies.Count -gt 0) { $settings['permissions'] = [ordered]@{ deny = $denies.ToArray() } }
-    if ($hooks.Count -gt 0)  { $settings['hooks'] = $hooks }
-
-    $claudeDir = Join-Path $ProjectRoot '.claude'
-    if (-not (Test-Path $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null }
-
+    # Merge into any existing settings.json rather than replacing it, so unrelated
+    # hooks, permissions, and other keys the user maintains are preserved. Our own
+    # entries (identified by the gate.ps1 command) are refreshed idempotently.
+    $claudeDir    = Join-Path $ProjectRoot '.claude'
     $settingsPath = Join-Path $claudeDir 'settings.json'
+
+    $settings = @{}
+    if (Test-Path $settingsPath -PathType Leaf) {
+        try { $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json -AsHashtable }
+        catch { Write-Warning "Existing .claude/settings.json is not valid JSON; it will be replaced."; $settings = @{} }
+    }
+    if ($null -eq $settings) { $settings = @{} }
+
+    if ($denies.Count -gt 0) {
+        if ($settings['permissions'] -isnot [System.Collections.IDictionary]) { $settings['permissions'] = @{} }
+        $merged = [System.Collections.Generic.List[string]]::new()
+        foreach ($d in @($settings['permissions']['deny'])) { if ($d -and -not $merged.Contains($d)) { $merged.Add($d) | Out-Null } }
+        foreach ($d in $denies) { if (-not $merged.Contains($d)) { $merged.Add($d) | Out-Null } }
+        $settings['permissions']['deny'] = $merged.ToArray()
+    }
+
+    if ($hooks.Count -gt 0) {
+        if ($settings['hooks'] -isnot [System.Collections.IDictionary]) { $settings['hooks'] = @{} }
+        foreach ($event in $hooks.Keys) {
+            # Keep the user's own entries for this event; drop any prior Wayforge
+            # entry (whose command references gate.ps1) before adding the current one.
+            $kept = foreach ($entry in (@($settings['hooks'][$event]) | Where-Object { $_ })) {
+                $cmds = @($entry.hooks) | ForEach-Object { $_.command }
+                if ($cmds -match 'gate\.ps1') { continue }
+                $entry
+            }
+            $settings['hooks'][$event] = @(@($kept) + @($hooks[$event])) | Where-Object { $_ }
+        }
+    }
+
+    if (-not (Test-Path $claudeDir)) { New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null }
     ($settings | ConvertTo-Json -Depth 8) | Set-Content -Path $settingsPath -Encoding utf8NoBOM
     return $settingsPath
 }

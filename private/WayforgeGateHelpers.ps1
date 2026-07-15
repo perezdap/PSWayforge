@@ -175,13 +175,25 @@ function Get-WayforgeChangeSet {
             # The calling shim reads stdin once and passes it via -EventJson
             # (git's pre-push sends "<lref> <lsha> <rref> <rsha>" lines, not JSON).
             $files = [System.Collections.Generic.List[string]]::new()
+            $emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'   # git's canonical empty tree
             $stdin = if ($EventJson) { $EventJson } else { '' }
             foreach ($line in ($stdin -split "`r?`n")) {
                 $parts = $line -split '\s+'
                 if ($parts.Count -ge 4) {
                     $localSha = $parts[1]; $remoteSha = $parts[3]
-                    $range = if ($remoteSha -match '^0+$') { $localSha } else { "$remoteSha..$localSha" }
-                    $out = & git -C $Root diff --name-only $range 2>$null
+                    if ($remoteSha -match '^0+$') {
+                        # New remote branch: diff against the merge-base with the
+                        # default branch, else the empty tree (all files). Never
+                        # diff the tip alone, which compares against the (clean)
+                        # working tree and yields no changes -> fail-open.
+                        $base = Get-WayforgeDefaultBase -Root $Root
+                        $mergeBase = (& git -C $Root merge-base $base $localSha 2>$null)
+                        $from = if ($LASTEXITCODE -eq 0 -and $mergeBase) { $mergeBase.Trim() } else { $emptyTree }
+                        $out = & git -C $Root diff --name-only $from $localSha 2>$null
+                    }
+                    else {
+                        $out = & git -C $Root diff --name-only "$remoteSha..$localSha" 2>$null
+                    }
                     $out | Where-Object { $_ } | ForEach-Object { $files.Add($_) }
                 }
             }
@@ -198,24 +210,67 @@ function Get-WayforgeChangeSet {
             return @($out | Where-Object { $_ })
         }
         default {
-            # pre-tool / stop: derive from the harness event payload.
-            if ($EventJson) {
-                try {
-                    $ev = $EventJson | ConvertFrom-Json
-                    $fp = $ev.tool_input.file_path
-                    if ($fp) {
-                        $rel = $fp -replace '\\', '/'
-                        $rootNorm = ($Root -replace '\\', '/').TrimEnd('/') + '/'
-                        if ($rel.StartsWith($rootNorm, [StringComparison]::OrdinalIgnoreCase)) {
-                            $rel = $rel.Substring($rootNorm.Length)
-                        }
-                        return , $rel
-                    }
-                } catch { }
-            }
+            # pre-tool / stop paths come from Get-WayforgeActionContext, which
+            # fails closed on a malformed payload rather than swallowing it.
             return @()
         }
     }
+}
+
+function Get-WayforgeActionContext {
+    <#
+    .SYNOPSIS
+        Parses a harness event payload into { Paths, ToolName, Command } for the
+        pre-tool / stop stages.
+    .DESCRIPTION
+        An absent payload yields an empty context. A non-empty but malformed
+        payload throws, so the engine's outer handler fails closed (deny) instead
+        of skipping gates on an empty changeset (fail-open).
+    #>
+    param([string] $EventJson, [string] $Root)
+
+    $context = [PSCustomObject]@{ Paths = @(); ToolName = $null; Command = $null }
+    if ([string]::IsNullOrWhiteSpace($EventJson)) { return $context }
+
+    $ev = $EventJson | ConvertFrom-Json          # malformed -> throw -> fail-closed
+    $context.ToolName = $ev.tool_name
+    $context.Command  = $ev.tool_input.command
+
+    $fp = $ev.tool_input.file_path
+    if ($fp) {
+        $rel = $fp -replace '\\', '/'
+        $rootNorm = ($Root -replace '\\', '/').TrimEnd('/') + '/'
+        if ($rel.StartsWith($rootNorm, [StringComparison]::OrdinalIgnoreCase)) {
+            $rel = $rel.Substring($rootNorm.Length)
+        }
+        $context.Paths = @($rel)
+    }
+    return $context
+}
+
+function ConvertTo-WayforgeArgList {
+    <#
+    .SYNOPSIS
+        Splits a command line into argument tokens, honoring single/double quotes,
+        without any shell or PowerShell interpretation.
+    #>
+    param([string] $CommandLine)
+
+    $tokens = [System.Collections.Generic.List[string]]::new()
+    $sb = [System.Text.StringBuilder]::new()
+    $quote = $null
+    foreach ($ch in $CommandLine.ToCharArray()) {
+        if ($quote) {
+            if ($ch -eq $quote) { $quote = $null } else { [void]$sb.Append($ch) }
+        }
+        elseif ($ch -eq '"' -or $ch -eq "'") { $quote = $ch }
+        elseif ($ch -eq ' ' -or $ch -eq "`t") {
+            if ($sb.Length -gt 0) { $tokens.Add($sb.ToString()) | Out-Null; [void]$sb.Clear() }
+        }
+        else { [void]$sb.Append($ch) }
+    }
+    if ($sb.Length -gt 0) { $tokens.Add($sb.ToString()) | Out-Null }
+    return $tokens.ToArray()
 }
 
 function New-WayforgeGateResult {
@@ -237,7 +292,16 @@ function Invoke-WayforgeRunCheck {
     try {
         switch ($Shell) {
             'sh'     { & sh -c $Command 2>&1 | Out-Null; return $LASTEXITCODE }
-            'native' { Invoke-Expression $Command 2>&1 | Out-Null; return $LASTEXITCODE }
+            'native' {
+                # Direct binary invocation - no shell or PowerShell interpretation
+                # of metacharacters. Arguments are passed as a separated list.
+                $argv = ConvertTo-WayforgeArgList -CommandLine $Command
+                if ($argv.Count -eq 0) { return 0 }
+                $exe  = $argv[0]
+                $rest = if ($argv.Count -gt 1) { $argv[1..($argv.Count - 1)] } else { @() }
+                & $exe @rest 2>&1 | Out-Null
+                return $LASTEXITCODE
+            }
             default  { & pwsh -NoProfile -Command $Command 2>&1 | Out-Null; return $LASTEXITCODE }
         }
     }
@@ -251,7 +315,10 @@ function Invoke-WayforgeCheck {
         Evaluates one gate `check` (requires_artifact | run | forbid) and returns
         an object with Ok/Message/Detail.
     #>
-    param($Check, [string] $Root, [string] $Description, [string[]] $ChangeSet)
+    param(
+        $Check, [string] $Root, [string] $Description,
+        [string[]] $ChangeSet, [string] $ToolName, [string] $Command
+    )
 
     if ($null -eq $Check) {
         return [PSCustomObject]@{ Ok = $true; Message = $Description; Detail = 'no check' }
@@ -262,15 +329,44 @@ function Invoke-WayforgeCheck {
     $forbid   = Get-WayforgeField $Check 'forbid'
 
     if ($forbid) {
-        $paths = @(Get-WayforgeField $forbid 'path')
-        foreach ($file in $ChangeSet) {
-            foreach ($glob in $paths) {
-                if (Test-WayforgeGlobMatch -Path $file -Glob $glob) {
-                    return [PSCustomObject]@{ Ok = $false; Message = $Description; Detail = "forbidden path '$file' (matches '$glob')" }
+        # Filter nulls: @(Get-WayforgeField ... 'missing') would be @($null) with
+        # Count 1, wrongly registering an (unmatched) dimension.
+        $paths    = @(Get-WayforgeField $forbid 'path'    | Where-Object { $_ })
+        $tools    = @(Get-WayforgeField $forbid 'tool'    | Where-Object { $_ })
+        $commands = @(Get-WayforgeField $forbid 'command' | Where-Object { $_ })
+
+        # AND over the dimensions evaluable in this context. `tool` and `command`
+        # only bind mid-session (pre-tool, where a tool/command is in play); at
+        # commit/push/ci only `path` binds. Block when every evaluable dimension
+        # matches; a rule with no evaluable dimension here does not fire.
+        $evaluable = [System.Collections.Generic.List[object]]::new()
+
+        if ($paths.Count) {
+            $hit = $null
+            foreach ($file in $ChangeSet) {
+                foreach ($glob in $paths) {
+                    if (Test-WayforgeGlobMatch -Path $file -Glob $glob) { $hit = "path '$file' matches '$glob'"; break }
                 }
+                if ($hit) { break }
             }
+            $evaluable.Add([PSCustomObject]@{ Matched = [bool]$hit; Detail = $hit }) | Out-Null
         }
-        return [PSCustomObject]@{ Ok = $true; Message = $Description; Detail = 'no forbidden paths touched' }
+        if ($tools.Count -and $ToolName) {
+            $wanted  = $tools | ForEach-Object { "$_".ToLowerInvariant() }
+            $matched = $wanted -contains $ToolName.ToLowerInvariant()
+            $evaluable.Add([PSCustomObject]@{ Matched = $matched; Detail = "tool '$ToolName'" }) | Out-Null
+        }
+        if ($commands.Count -and $Command) {
+            $matched = $false
+            foreach ($pattern in $commands) { if ($Command -like $pattern) { $matched = $true; break } }
+            $evaluable.Add([PSCustomObject]@{ Matched = $matched; Detail = "command '$Command'" }) | Out-Null
+        }
+
+        if ($evaluable.Count -gt 0 -and @($evaluable | Where-Object { -not $_.Matched }).Count -eq 0) {
+            $why = ($evaluable | ForEach-Object { $_.Detail } | Where-Object { $_ }) -join '; '
+            return [PSCustomObject]@{ Ok = $false; Message = $Description; Detail = "forbidden: $why" }
+        }
+        return [PSCustomObject]@{ Ok = $true; Message = $Description; Detail = 'no forbidden action' }
     }
 
     if ($artifact) {
