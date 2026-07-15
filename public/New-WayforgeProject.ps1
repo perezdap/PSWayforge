@@ -22,10 +22,25 @@ function New-WayforgeProject {
         When set, scaffolding is applied to an existing directory. Any file that
         already exists is skipped with a warning instead of being overwritten.
 
+    .PARAMETER Harness
+        Which coding-agent harnesses to wire enforcement config for. Defaults to
+        'claude'. Ignored when -SkipEnforcement is set or git is unavailable.
+
+    .PARAMETER SkipEnforcement
+        Skip wiring the enforcement layer (git hooks + harness config). The
+        workspace is still scaffolded; run Register-WayforgeHooks and
+        Sync-WayforgeHarness later to enable enforcement.
+
+    .PARAMETER WithCI
+        Also generate the CI gate workflow (.github/workflows/wayforge-gate.yml)
+        so the same gates enforce at merge time. Requires branch protection to
+        become a required check.
+
     .EXAMPLE
         New-WayforgeProject -Name MyProject -Path C:\Projects
 
-        Creates C:\Projects\MyProject and scaffolds a fresh workspace.
+        Creates C:\Projects\MyProject, scaffolds a fresh workspace, and wires the
+        git-hook floor plus Claude enforcement config.
 
     .EXAMPLE
         New-WayforgeProject -Name MyProject -Path . -InitializeExisting
@@ -41,7 +56,14 @@ function New-WayforgeProject {
         [Parameter(Mandatory, Position = 1)]
         [string]$Path,
 
-        [switch]$InitializeExisting
+        [switch]$InitializeExisting,
+
+        [ValidateSet('claude')]
+        [string[]]$Harness = @('claude'),
+
+        [switch]$SkipEnforcement,
+
+        [switch]$WithCI
     )
 
     begin {
@@ -72,6 +94,7 @@ function New-WayforgeProject {
             (Join-Path $projectRoot '.workflow' 'definitions')
             (Join-Path $projectRoot '.workflow' 'hooks')
             (Join-Path $projectRoot '.workflow' 'schemas')
+            (Join-Path $projectRoot '.workflow' 'artifacts')
         )
 
         foreach ($dir in $directories) {
@@ -110,13 +133,43 @@ function New-WayforgeProject {
             -RelativePath (Join-Path '.workflow' 'schemas' 'example.json') `
             -TemplatePath (Join-Path $moduleRoot 'templates' 'schema.example.json')
 
+        Install-WayforgeFile `
+            -ProjectRoot $projectRoot `
+            -RelativePath (Join-Path '.workflow' 'schemas' 'plan.json') `
+            -TemplatePath (Join-Path $moduleRoot 'templates' 'schema.plan.json')
+
         Initialize-WayforgeGitRepository -ProjectRoot $projectRoot
+
+        # Wire the enforcement layer. A failure here never fails the scaffold —
+        # the workspace is already usable; enforcement can be added later.
+        $enforced = $false
+        if (-not $SkipEnforcement) {
+            $gitAvailable = [bool](Get-Command git -ErrorAction SilentlyContinue)
+            if ($gitAvailable -and (Test-Path (Join-Path $projectRoot '.git'))) {
+                if ($PSCmdlet.ShouldProcess($projectRoot, 'Wire enforcement (git hooks + harness config)')) {
+                    try {
+                        Register-WayforgeHooks -ProjectPath $projectRoot | Out-Null
+                        Sync-WayforgeHarness -Harness $Harness -ProjectPath $projectRoot | Out-Null
+                        if ($WithCI) { Register-WayforgeCI -ProjectPath $projectRoot | Out-Null }
+                        $enforced = $true
+                    }
+                    catch {
+                        Write-Warning "Enforcement wiring failed: $($_.Exception.Message). Scaffold is complete; run Register-WayforgeHooks and Sync-WayforgeHarness manually."
+                    }
+                }
+            }
+            else {
+                Write-Warning 'git unavailable or repository not initialized; skipping enforcement wiring. Run Register-WayforgeHooks and Sync-WayforgeHarness later.'
+            }
+        }
 
         [PSCustomObject]@{
             PSTypeName          = 'PSWayforge.Project'
             Name                = $Name
             Path                = $projectRoot
             InitializedExisting = $InitializeExisting.IsPresent
+            Enforced            = $enforced
+            Harness             = if ($enforced) { $Harness } else { @() }
         }
     }
 }

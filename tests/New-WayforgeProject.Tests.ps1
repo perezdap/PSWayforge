@@ -79,4 +79,28 @@ Describe 'New-WayforgeProject' {
         Join-Path -Path $testProjectPath -ChildPath '.gitignore' | Should -Exist
         $warnings | Should -Not -BeNullOrEmpty
     }
+
+    It 'wires the enforcement layer when git is available' {
+        New-WayforgeProject -Name 'EnforcedProject' -Path $TestDrive -WarningAction SilentlyContinue | Out-Null
+        $root = Join-Path $TestDrive 'EnforcedProject'
+
+        if (Get-Command -Name git -ErrorAction SilentlyContinue) {
+            Join-Path $root '.claude/settings.json'        | Should -Exist
+            Join-Path $root '.workflow/hooks/gate.ps1'     | Should -Exist
+            Join-Path $root '.workflow/githooks/pre-commit' | Should -Exist
+            Join-Path $root '.workflow/artifacts'          | Should -Exist
+            Push-Location $root
+            try { (git config core.hooksPath) | Should -Be '.workflow/githooks' }
+            finally { Pop-Location }
+        }
+    }
+
+    It 'skips enforcement when -SkipEnforcement is set' {
+        $result = New-WayforgeProject -Name 'PlainProject' -Path $TestDrive -SkipEnforcement -WarningAction SilentlyContinue
+        $root = Join-Path $TestDrive 'PlainProject'
+
+        $result.Enforced | Should -BeFalse
+        Join-Path $root '.claude/settings.json'         | Should -Not -Exist
+        Join-Path $root '.workflow/githooks/pre-commit' | Should -Not -Exist
+    }
 }
