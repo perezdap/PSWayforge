@@ -1,6 +1,6 @@
 @{
     RootModule           = 'PSWayforge.psm1'
-    ModuleVersion        = '0.3.0'
+    ModuleVersion        = '0.4.0'
     GUID                 = 'cc6c71de-c415-442a-9170-9589bfa5eb0a'
     Author               = 'PSWayforge Contributors'
     CompanyName          = ''
@@ -20,6 +20,7 @@
         'Sync-WayforgeHarness'
         'Get-WayforgeHarness'
         'Select-WayforgeHarness'
+        'Update-WayforgeAgentsFile'
     )
     CmdletsToExport      = @()
     VariablesToExport    = @()
@@ -30,7 +31,7 @@
             LicenseUri               = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
             ProjectUri               = 'https://github.com/perezdap/PSWayforge'
             RequireLicenseAcceptance = $false
-            ReleaseNotes             = '0.3.0: Scopes support !-prefixed exclude globs; the default code scope now matches source by extension across any layout (flat/root, cmd/pkg/internal, etc.) while excluding Wayforge''s own tree, so the plan gate is no longer a no-op on non-standard layouts. 0.2.2: Purge stale Write(path) deny rules on re-sync. 0.2.1: Fix hook JSON array shape + Edit-only deny rules. 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
+            ReleaseNotes             = '0.4.0: The workflow''s steps are now actually rendered into AGENTS.md (a managed, non-destructive marker block) via Update-WayforgeAgentsFile and during scaffolding - previously steps were parsed but unused. 0.3.0: Scopes support !-prefixed exclude globs; the default code scope now matches source by extension across any layout (flat/root, cmd/pkg/internal, etc.) while excluding Wayforge''s own tree, so the plan gate is no longer a no-op on non-standard layouts. 0.2.2: Purge stale Write(path) deny rules on re-sync. 0.2.1: Fix hook JSON array shape + Edit-only deny rules. 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
         }
     }
 }
