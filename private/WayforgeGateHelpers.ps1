@@ -118,13 +118,39 @@ function Test-WayforgeGlobMatch {
         [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 }
 
+function Test-WayforgePathInScope {
+    <#
+    .SYNOPSIS
+        Tests whether a path is in a scope: it must match at least one include
+        glob and no exclude glob. Globs prefixed with '!' are excludes.
+    #>
+    param([string] $Path, $Globs)
+
+    $globList = @($Globs | Where-Object { $_ })
+    $includes = @($globList | Where-Object { -not ([string]$_).StartsWith('!') })
+    $excludes = @($globList | Where-Object { ([string]$_).StartsWith('!') } | ForEach-Object { ([string]$_).Substring(1) })
+
+    $included = $false
+    foreach ($glob in $includes) {
+        if (Test-WayforgeGlobMatch -Path $Path -Glob $glob) { $included = $true; break }
+    }
+    if (-not $included) { return $false }
+
+    foreach ($glob in $excludes) {
+        if (Test-WayforgeGlobMatch -Path $Path -Glob $glob) { return $false }
+    }
+    return $true
+}
+
 function Test-WayforgeChangeCondition {
     <#
     .SYNOPSIS
         Evaluates a gate `when` predicate against a changeset.
     .DESCRIPTION
-        Supports: always, changes_touch(<scope>), changes_only(<scope>).
-        Unknown predicates are treated as applicable (fail-safe for block gates).
+        Supports: always, changes_touch(<scope>), changes_only(<scope>). A scope's
+        globs may include '!'-prefixed excludes (a path is in scope if it matches
+        an include and no exclude). Unknown predicates are treated as applicable
+        (fail-safe for block gates).
     #>
     param([string] $Condition, [string[]] $ChangeSet, $Scopes)
 
@@ -135,9 +161,7 @@ function Test-WayforgeChangeCondition {
     if ($Condition -match '^\s*changes_touch\(\s*(\w+)\s*\)\s*$') {
         $globs = @(if ($Scopes -is [System.Collections.IDictionary] -and $Scopes.Contains($matches[1])) { $Scopes[$matches[1]] })
         foreach ($f in $ChangeSet) {
-            foreach ($glob in $globs) {
-                if (Test-WayforgeGlobMatch -Path $f -Glob $glob) { return $true }
-            }
+            if (Test-WayforgePathInScope -Path $f -Globs $globs) { return $true }
         }
         return $false
     }
@@ -146,11 +170,7 @@ function Test-WayforgeChangeCondition {
         if (-not $ChangeSet -or @($ChangeSet).Count -eq 0) { return $false }
         $globs = @(if ($Scopes -is [System.Collections.IDictionary] -and $Scopes.Contains($matches[1])) { $Scopes[$matches[1]] })
         foreach ($f in $ChangeSet) {
-            $matched = $false
-            foreach ($glob in $globs) {
-                if (Test-WayforgeGlobMatch -Path $f -Glob $glob) { $matched = $true; break }
-            }
-            if (-not $matched) { return $false }
+            if (-not (Test-WayforgePathInScope -Path $f -Globs $globs)) { return $false }
         }
         return $true
     }

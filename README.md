@@ -43,7 +43,7 @@ Initialize-WayforgeProject -Harness claude,codex
 
 Two things to know when applying it to an existing codebase:
 
-- **The default gates enforce immediately.** The scaffolded `.workflow/definitions/default.yaml` requires a `plan.json` for code changes and forbids `.env` edits — so your next commit touching the `code` scope without a plan will be blocked. Open that file and tune the `code` scope (default: `src`, `lib`, `app`, `public`, `private`, `tests`) and gates to fit your layout first.
+- **The default gates enforce immediately.** The scaffolded `.workflow/definitions/default.yaml` requires a `plan.json` for code changes and forbids `.env` edits — so your next commit touching source without a plan will be blocked. The default `code` scope matches source files **by extension across any layout** (flat root, `cmd/`, `pkg/`, `src/`, …) while excluding Wayforge's own tree, so it works out of the box; open that file to narrow or extend it if you want.
 - **After upgrading the module** (`Update-Module PSWayforge`), re-run `Sync-WayforgeHarness -Detect` inside the repo to regenerate each agent's config with the latest fixes.
 
 ## How it works
