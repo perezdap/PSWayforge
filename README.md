@@ -31,6 +31,21 @@ Initialize-WayforgeProject -DetectHarness
 
 That creates a git repo where — for example — an agent (or a human) **cannot land code without a plan** and **cannot touch `.env`**, enforced through each agent's own hooks *and* the git hooks.
 
+## Adding to an existing project
+
+`Initialize-WayforgeProject` applies Wayforge to the current repository **in place** and non-destructively — existing files are preserved and each agent's config (e.g. `.claude/settings.json`) is *merged*, not overwritten:
+
+```powershell
+Initialize-WayforgeProject -DetectHarness        # wire every installed agent
+# ...or choose specific harnesses:
+Initialize-WayforgeProject -Harness claude,codex
+```
+
+Two things to know when applying it to an existing codebase:
+
+- **The default gates enforce immediately.** The scaffolded `.workflow/definitions/default.yaml` requires a `plan.json` for code changes and forbids `.env` edits — so your next commit touching the `code` scope without a plan will be blocked. Open that file and tune the `code` scope (default: `src`, `lib`, `app`, `public`, `private`, `tests`) and gates to fit your layout first.
+- **After upgrading the module** (`Update-Module PSWayforge`), re-run `Sync-WayforgeHarness -Detect` inside the repo to regenerate each agent's config with the latest fixes.
+
 ## How it works
 
 A workflow lives in `.workflow/definitions/*.yaml`:

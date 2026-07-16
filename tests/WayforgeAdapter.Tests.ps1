@@ -93,6 +93,22 @@ Describe 'Sync-WayforgeHarness (claude)' {
         $settings.permissions.deny | Should -Not -Contain 'Write(**/.env)'
     }
 
+    It 'purges stale Write(path) deny rules superseded by Edit(path) on re-sync' {
+        $p = Join-Path $TestDrive 'purge'; New-GateProject -Path $p
+        $claude = Join-Path $p '.claude'
+        New-Item -ItemType Directory -Path $claude -Force | Out-Null
+        # Simulate a file written by an older (buggy) version + a user's own rule.
+        '{ "permissions": { "deny": ["Edit(**/.env)", "Write(**/.env)", "Edit(secret.txt)"] } }' |
+            Set-Content (Join-Path $claude 'settings.json') -Encoding utf8NoBOM
+
+        Sync-WayforgeHarness -Harness claude -ProjectPath $p | Out-Null
+        $deny = (Get-Content (Join-Path $claude 'settings.json') -Raw | ConvertFrom-Json).permissions.deny
+
+        $deny | Should -Contain 'Edit(**/.env)'
+        $deny | Should -Not -Contain 'Write(**/.env)'   # stale rule purged
+        $deny | Should -Contain 'Edit(secret.txt)'      # unrelated user rule preserved
+    }
+
     It 'preserves existing settings.json entries and is idempotent' {
         $p = Join-Path $TestDrive 'mergeproj'
         New-GateProject -Path $p
