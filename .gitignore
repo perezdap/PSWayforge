@@ -1,0 +1,3 @@
+# Dowse code index (local, rebuildable via `dowse index .`)
+.dowse_index/
+.dowse_index.serve.lock
