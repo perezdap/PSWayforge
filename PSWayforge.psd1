@@ -1,6 +1,6 @@
 @{
     RootModule           = 'PSWayforge.psm1'
-    ModuleVersion        = '0.2.0'
+    ModuleVersion        = '0.2.1'
     GUID                 = 'cc6c71de-c415-442a-9170-9589bfa5eb0a'
     Author               = 'PSWayforge Contributors'
     CompanyName          = ''
@@ -30,7 +30,7 @@
             LicenseUri               = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
             ProjectUri               = 'https://github.com/perezdap/PSWayforge'
             RequireLicenseAcceptance = $false
-            ReleaseNotes             = '0.2.0: Add Initialize-WayforgeProject to apply Wayforge to an existing project in place. 0.1.0: workflow gate engine, git + CI enforcement floors, adapters for Claude/Codex/Grok/Copilot/Cursor/opencode/pi/Kimi, and harness detection.'
+            ReleaseNotes             = '0.2.1: Fix Claude/Codex/Cursor hook config emitting a single matcher as a JSON object instead of an array (Claude ignored the hook); Claude/Kimi deny rules now use Edit(path) only (Write(path) is not a valid rule). 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
         }
     }
 }

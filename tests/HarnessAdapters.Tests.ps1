@@ -61,6 +61,7 @@ Describe 'Sync-WayforgeHarness codex' {
         Sync-WayforgeHarness -Harness codex -ProjectPath $p | Out-Null
 
         $f = Join-Path $p '.codex/hooks.json'; $f | Should -Exist
+        (Get-Content $f -Raw) | Should -Match '"PreToolUse"\s*:\s*\['      # array, not object
         $j = Get-Content $f -Raw | ConvertFrom-Json
         $j.hooks.PreToolUse[0].hooks[0].command | Should -Match 'gate\.ps1'
         $j.hooks.PreToolUse[0].hooks[0].command | Should -Match '-AsHook codex'
@@ -113,6 +114,7 @@ Describe 'Sync-WayforgeHarness cursor' {
         Sync-WayforgeHarness -Harness cursor -ProjectPath $p | Out-Null
 
         $f = Join-Path $p '.cursor/hooks.json'; $f | Should -Exist
+        (Get-Content $f -Raw) | Should -Match '"beforeShellExecution"\s*:\s*\['   # array, not object
         $j = Get-Content $f -Raw | ConvertFrom-Json
         $j.version                                    | Should -Be 1
         $j.hooks.beforeShellExecution[0].command      | Should -Match '-AsHook cursor'
