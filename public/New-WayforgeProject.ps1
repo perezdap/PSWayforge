@@ -58,7 +58,7 @@ function New-WayforgeProject {
 
         [switch]$InitializeExisting,
 
-        [ValidateSet('claude', 'codex', 'grok', 'copilot', 'cursor')]
+        [ValidateSet('claude', 'codex', 'grok', 'copilot', 'cursor', 'opencode', 'pi', 'kimi')]
         [string[]]$Harness = @('claude'),
 
         [switch]$SkipEnforcement,

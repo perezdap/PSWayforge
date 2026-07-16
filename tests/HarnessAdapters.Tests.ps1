@@ -128,15 +128,59 @@ Describe 'Sync-WayforgeHarness cursor' {
     }
 }
 
+Describe 'Sync-WayforgeHarness opencode' {
+    It 'writes a .opencode/plugins/wayforge-gate.js plugin that throws to block' {
+        $p = Join-Path $TestDrive 'opencode'; New-HProject -Path $p
+        Sync-WayforgeHarness -Harness opencode -ProjectPath $p | Out-Null
+
+        $f = Join-Path $p '.opencode/plugins/wayforge-gate.js'; $f | Should -Exist
+        $c = Get-Content $f -Raw
+        $c | Should -Match 'tool\.execute\.before'
+        $c | Should -Match 'gate\.ps1'
+        $c | Should -Match 'opencode'
+        $c | Should -Match 'throw'
+    }
+}
+
+Describe 'Sync-WayforgeHarness pi' {
+    It 'writes a .pi/extensions/wayforge-gate.ts extension that returns block' {
+        $p = Join-Path $TestDrive 'pi'; New-HProject -Path $p
+        Sync-WayforgeHarness -Harness pi -ProjectPath $p | Out-Null
+
+        $f = Join-Path $p '.pi/extensions/wayforge-gate.ts'; $f | Should -Exist
+        $c = Get-Content $f -Raw
+        $c | Should -Match 'pi\.on\("tool_call"'
+        $c | Should -Match 'block: true'
+        $c | Should -Match '"pi"'
+    }
+}
+
+Describe 'Sync-WayforgeHarness kimi' {
+    It 'writes a global-config snippet and warns (Kimi hooks are global-only)' {
+        $p = Join-Path $TestDrive 'kimi'; New-HProject -Path $p
+        $warn = $null
+        Sync-WayforgeHarness -Harness kimi -ProjectPath $p -WarningVariable warn -WarningAction SilentlyContinue | Out-Null
+
+        $f = Join-Path $p '.workflow/harness/kimi.config.toml'; $f | Should -Exist
+        $c = Get-Content $f -Raw
+        $c | Should -Match '\[\[hooks\]\]'
+        $c | Should -Match 'PreToolUse'
+        $c | Should -Match '\[\[permission.rules\]\]'
+        $c | Should -Match 'Edit\(\*\*/\.env\)'
+        $warn | Should -Not -BeNullOrEmpty
+    }
+}
+
 Describe 'Sync-WayforgeHarness multi' {
     It 'syncs several harnesses at once and shares one gate shim' {
         $p = Join-Path $TestDrive 'multi'; New-HProject -Path $p
-        $res = Sync-WayforgeHarness -Harness claude, codex, cursor -ProjectPath $p
+        $res = Sync-WayforgeHarness -Harness claude, codex, cursor, opencode -ProjectPath $p
 
-        $res.Harness | Should -Contain 'codex'
-        Join-Path $p '.claude/settings.json'   | Should -Exist
-        Join-Path $p '.codex/hooks.json'       | Should -Exist
-        Join-Path $p '.cursor/hooks.json'      | Should -Exist
-        Join-Path $p '.workflow/hooks/gate.ps1' | Should -Exist
+        $res.Harness | Should -Contain 'opencode'
+        Join-Path $p '.claude/settings.json'          | Should -Exist
+        Join-Path $p '.codex/hooks.json'              | Should -Exist
+        Join-Path $p '.cursor/hooks.json'             | Should -Exist
+        Join-Path $p '.opencode/plugins/wayforge-gate.js' | Should -Exist
+        Join-Path $p '.workflow/hooks/gate.ps1'       | Should -Exist
     }
 }
