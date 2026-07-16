@@ -223,9 +223,14 @@ function Get-WayforgeActionContext {
         Parses a harness event payload into { Paths, ToolName, Command } for the
         pre-tool / stop stages.
     .DESCRIPTION
-        An absent payload yields an empty context. A non-empty but malformed
-        payload throws, so the engine's outer handler fails closed (deny) instead
-        of skipping gates on an empty changeset (fail-open).
+        This is the single event-normalization boundary before the gate engine.
+        Harnesses use different field names for the same concepts, so it accepts
+        all known variants: the tool name (tool_name / toolName), the arguments
+        container (tool_input / toolArgs / tool_args / input), the file path
+        (file_path / filePath / path, plus multi-file arrays), and the command
+        (in the args container or top-level, as Cursor's beforeShellExecution
+        sends it). An absent payload yields an empty context; a non-empty but
+        malformed payload throws, so the engine fails closed (deny).
     #>
     param([string] $EventJson, [string] $Root)
 
@@ -233,19 +238,106 @@ function Get-WayforgeActionContext {
     if ([string]::IsNullOrWhiteSpace($EventJson)) { return $context }
 
     $ev = $EventJson | ConvertFrom-Json          # malformed -> throw -> fail-closed
-    $context.ToolName = $ev.tool_name
-    $context.Command  = $ev.tool_input.command
 
-    $fp = $ev.tool_input.file_path
-    if ($fp) {
-        $rel = $fp -replace '\\', '/'
-        $rootNorm = ($Root -replace '\\', '/').TrimEnd('/') + '/'
-        if ($rel.StartsWith($rootNorm, [StringComparison]::OrdinalIgnoreCase)) {
-            $rel = $rel.Substring($rootNorm.Length)
-        }
-        $context.Paths = @($rel)
+    $context.ToolName = if ($ev.tool_name) { $ev.tool_name } elseif ($ev.toolName) { $ev.toolName } else { $null }
+
+    # The tool's arguments live under different keys across harnesses.
+    $toolArgs = $null
+    foreach ($key in 'tool_input', 'toolArgs', 'tool_args', 'input') {
+        $value = Get-WayforgeField $ev $key
+        if ($null -ne $value) { $toolArgs = $value; break }
     }
+
+    $rawPaths = [System.Collections.Generic.List[string]]::new()
+    if ($toolArgs) {
+        $context.Command = Get-WayforgeField $toolArgs 'command'
+        foreach ($key in 'file_path', 'filePath', 'path', 'filepath') {
+            $value = Get-WayforgeField $toolArgs $key
+            if ($value) { $rawPaths.Add([string]$value) | Out-Null }
+        }
+        foreach ($key in 'file_paths', 'filePaths', 'paths', 'files') {
+            $value = Get-WayforgeField $toolArgs $key
+            if ($value) { foreach ($item in @($value)) { if ($item) { $rawPaths.Add([string]$item) | Out-Null } } }
+        }
+    }
+
+    # Cursor's beforeShellExecution puts the command at the top level (no args container).
+    if (-not $context.Command -and $ev.command) {
+        $context.Command = $ev.command
+        if (-not $context.ToolName) { $context.ToolName = 'Bash' }
+    }
+
+    if ($rawPaths.Count -gt 0) {
+        $rootNorm = ($Root -replace '\\', '/').TrimEnd('/') + '/'
+        $context.Paths = @($rawPaths | ForEach-Object {
+                $rel = $_ -replace '\\', '/'
+                if ($rel.StartsWith($rootNorm, [StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($rootNorm.Length) }
+                $rel
+            })
+    }
+
     return $context
+}
+
+function Get-WayforgeStages {
+    <#
+    .SYNOPSIS
+        Returns a hashtable set of the stages referenced by any gate's `on` list.
+    #>
+    param($Gates)
+
+    $stages = @{}
+    foreach ($gate in $Gates) {
+        foreach ($stage in @(Get-WayforgeField $gate 'on')) { if ($stage) { $stages[$stage] = $true } }
+    }
+    return $stages
+}
+
+function Get-WayforgeGateCommand {
+    <#
+    .SYNOPSIS
+        Builds the shell command a harness hook runs to invoke the shared gate
+        shim for a stage and dialect.
+    #>
+    param([string] $Stage, [string] $AsHook)
+    return "pwsh -NoProfile -File .workflow/hooks/gate.ps1 -Stage $Stage -AsHook $AsHook"
+}
+
+function Merge-WayforgeJsonHooks {
+    <#
+    .SYNOPSIS
+        Merges Wayforge-owned hook entries into a JSON hooks config, preserving
+        the user's other events/entries. Our entries (identified by a marker in
+        their serialized form, e.g. 'gate.ps1') are refreshed idempotently.
+    #>
+    param(
+        [string] $Path,
+        [hashtable] $OwnedByEvent,
+        [string] $Marker = 'gate.ps1',
+        [switch] $TopLevelVersion
+    )
+
+    $doc = @{}
+    if (Test-Path $Path -PathType Leaf) {
+        try { $doc = Get-Content $Path -Raw | ConvertFrom-Json -AsHashtable }
+        catch { Write-Warning "Existing '$Path' is not valid JSON; it will be replaced."; $doc = @{} }
+    }
+    if ($null -eq $doc) { $doc = @{} }
+    if ($TopLevelVersion -and -not $doc.ContainsKey('version')) { $doc['version'] = 1 }
+    if ($doc['hooks'] -isnot [System.Collections.IDictionary]) { $doc['hooks'] = @{} }
+
+    foreach ($event in $OwnedByEvent.Keys) {
+        $kept = foreach ($entry in (@($doc['hooks'][$event]) | Where-Object { $_ })) {
+            if (($entry | ConvertTo-Json -Depth 10 -Compress) -match [regex]::Escape($Marker)) { continue }
+            $entry
+        }
+        $doc['hooks'][$event] = @(@($kept) + @($OwnedByEvent[$event])) | Where-Object { $_ }
+    }
+
+    $parent = Split-Path -Parent $Path
+    if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    ($doc | ConvertTo-Json -Depth 12) | Set-Content -Path $Path -Encoding utf8NoBOM
+    return $Path
 }
 
 function ConvertTo-WayforgeArgList {
