@@ -19,6 +19,10 @@ function Sync-WayforgeHarness {
     .PARAMETER WorkflowName
         A single workflow definition to project. Defaults to all definitions.
 
+    .PARAMETER Detect
+        Ignore -Harness and instead sync every harness that Get-WayforgeHarness
+        reports as installed or already configured.
+
     .EXAMPLE
         Sync-WayforgeHarness -Harness claude
 
@@ -33,10 +37,21 @@ function Sync-WayforgeHarness {
 
         [string] $ProjectPath = (Get-Location).Path,
 
-        [string] $WorkflowName
+        [string] $WorkflowName,
+
+        [switch] $Detect
     )
 
     $root = Resolve-WayforgeGitRoot -Path $ProjectPath
+
+    if ($Detect) {
+        $Harness = @(Get-WayforgeHarness -ProjectPath $root | Where-Object { $_.Installed -or $_.Configured } | ForEach-Object { $_.Name })
+        if (-not $Harness) {
+            Write-Warning 'Sync-WayforgeHarness -Detect found no installed or configured harnesses; nothing to sync.'
+            return @()
+        }
+    }
+
     Install-WayforgeGateShim -ProjectRoot $root | Out-Null
 
     $results = [System.Collections.Generic.List[object]]::new()

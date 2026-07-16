@@ -17,6 +17,8 @@
         'Register-WayforgeHooks'
         'Register-WayforgeCI'
         'Sync-WayforgeHarness'
+        'Get-WayforgeHarness'
+        'Select-WayforgeHarness'
     )
     CmdletsToExport      = @()
     VariablesToExport    = @()
