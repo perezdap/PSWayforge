@@ -29,17 +29,15 @@ function Write-WayforgeKimiAdapter {
 
         $forbid = Get-WayforgeField (Get-WayforgeField $gate 'check') 'forbid'
         if ($forbid) {
-            $paths = @(Get-WayforgeField $forbid 'path' | Where-Object { $_ })
-            $tools = @(Get-WayforgeField $forbid 'tool' | Where-Object { $_ })
-            if (-not $tools) { $tools = @('edit', 'write') }
-            foreach ($p in $paths) {
-                foreach ($t in $tools) {
-                    $cap = switch ($t) {
-                        'edit'  { 'Edit' }  'write' { 'Write' }  'bash' { 'Bash' }
-                        default { (Get-Culture).TextInfo.ToTitleCase($t) }
-                    }
-                    $rules.Add("$cap($p)") | Out-Null
-                }
+            # Like Claude, Kimi's Edit(path) rule covers file-editing tools; paths
+            # map to Edit and commands to Bash.
+            foreach ($p in @(Get-WayforgeField $forbid 'path' | Where-Object { $_ })) {
+                $rule = "Edit($p)"
+                if (-not $rules.Contains($rule)) { $rules.Add($rule) | Out-Null }
+            }
+            foreach ($c in @(Get-WayforgeField $forbid 'command' | Where-Object { $_ })) {
+                $rule = "Bash($c)"
+                if (-not $rules.Contains($rule)) { $rules.Add($rule) | Out-Null }
             }
         }
     }

@@ -24,17 +24,16 @@ function Write-WayforgeClaudeAdapter {
 
         $forbid = Get-WayforgeField (Get-WayforgeField $gate 'check') 'forbid'
         if ($forbid) {
-            $paths = @(Get-WayforgeField $forbid 'path')
-            $tools = @(Get-WayforgeField $forbid 'tool')
-            if (-not $tools) { $tools = @('edit', 'write') }
-            foreach ($path in $paths) {
-                foreach ($tool in $tools) {
-                    $cap = switch ($tool) {
-                        'edit'  { 'Edit' }  'write' { 'Write' }  'bash' { 'Bash' }
-                        default { (Get-Culture).TextInfo.ToTitleCase($tool) }
-                    }
-                    $denies.Add("$cap($path)")
-                }
+            # Claude's Edit(path) rule covers ALL file-editing tools (Edit, Write,
+            # MultiEdit, NotebookEdit); there is no Write(path) permission rule, so
+            # emitting one is ignored (and warned about). Paths -> Edit; commands -> Bash.
+            foreach ($path in @(Get-WayforgeField $forbid 'path' | Where-Object { $_ })) {
+                $rule = "Edit($path)"
+                if (-not $denies.Contains($rule)) { $denies.Add($rule) }
+            }
+            foreach ($command in @(Get-WayforgeField $forbid 'command' | Where-Object { $_ })) {
+                $rule = "Bash($command)"
+                if (-not $denies.Contains($rule)) { $denies.Add($rule) }
             }
         }
     }
@@ -89,7 +88,9 @@ function Write-WayforgeClaudeAdapter {
                 if ($cmds -match 'gate\.ps1') { continue }
                 $entry
             }
-            $settings['hooks'][$event] = @(@($kept) + @($hooks[$event])) | Where-Object { $_ }
+            # Wrap the whole pipeline in @() so a single entry stays an ARRAY;
+            # otherwise ConvertTo-Json emits an object and Claude ignores the hook.
+            $settings['hooks'][$event] = @(@(@($kept) + @($hooks[$event])) | Where-Object { $_ })
         }
     }
 

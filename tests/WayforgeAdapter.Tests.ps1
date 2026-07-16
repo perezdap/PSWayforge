@@ -79,12 +79,18 @@ Describe 'Sync-WayforgeHarness (claude)' {
         $settingsPath | Should -Exist
         Join-Path $p '.workflow/hooks/gate.ps1' | Should -Exist
 
-        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-        $settings.hooks.PreToolUse | Should -Not -BeNullOrEmpty
+        $raw = Get-Content $settingsPath -Raw
+        # Claude requires an array of matchers; a single-element array must not
+        # serialize as an object, or Claude ignores the whole hook.
+        $raw | Should -Match '"PreToolUse"\s*:\s*\['
+
+        $settings = $raw | ConvertFrom-Json
         $settings.hooks.PreToolUse[0].hooks[0].command | Should -Match 'gate\.ps1'
         $settings.hooks.PreToolUse[0].hooks[0].command | Should -Match '\$\{CLAUDE_PROJECT_DIR\}'
+        # Edit(path) covers all file-editing tools; Write(path) is not a real
+        # Claude permission rule and must not be emitted.
         $settings.permissions.deny | Should -Contain 'Edit(**/.env)'
-        $settings.permissions.deny | Should -Contain 'Write(**/.env)'
+        $settings.permissions.deny | Should -Not -Contain 'Write(**/.env)'
     }
 
     It 'preserves existing settings.json entries and is idempotent' {

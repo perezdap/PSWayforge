@@ -331,7 +331,9 @@ function Merge-WayforgeJsonHooks {
             if (($entry | ConvertTo-Json -Depth 10 -Compress) -match [regex]::Escape($Marker)) { continue }
             $entry
         }
-        $doc['hooks'][$event] = @(@($kept) + @($OwnedByEvent[$event])) | Where-Object { $_ }
+        # Wrap the whole pipeline in @() so a single entry stays an ARRAY;
+        # otherwise ConvertTo-Json emits an object and the harness ignores the hook.
+        $doc['hooks'][$event] = @(@(@($kept) + @($OwnedByEvent[$event])) | Where-Object { $_ })
     }
 
     $parent = Split-Path -Parent $Path
