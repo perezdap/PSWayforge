@@ -101,6 +101,7 @@ All share one `gate.ps1` shim. `Get-WayforgeHarness` detects what's installed; `
 | `Register-WayforgeHooks` | Install the git-hook floor (`core.hooksPath`) |
 | `Register-WayforgeCI` | Generate the CI merge-gate workflow |
 | `Get-WayforgeHarness` / `Select-WayforgeHarness` | Detect / choose harnesses |
+| `Update-WayforgeAgentsFile` | Render the workflow's steps into a managed block in `AGENTS.md` |
 | `Get-WayforgeWorkflow` / `Test-WayforgeSchema` / `Invoke-WayforgeHook` | Workflow, schema, and hook utilities |
 
 ## Requirements

@@ -29,6 +29,13 @@ Describe 'New-WayforgeProject' {
         Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/AGENTS.md' | Should -Exist
     }
 
+    It 'renders the workflow steps into AGENTS.md' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive -WarningAction SilentlyContinue | Out-Null
+        $agents = Get-Content (Join-Path $TestDrive 'WayforgeTestProject/AGENTS.md') -Raw
+        $agents | Should -Match 'wayforge:workflow:start'
+        $agents | Should -Match '\bscout\b'
+    }
+
     It 'creates the .agents and .workflow directories' {
         New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
         Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.agents' | Should -Exist
@@ -75,7 +82,11 @@ Describe 'New-WayforgeProject' {
         $warnings = $null
         New-WayforgeProject -Name 'WayforgeExistingProject' -Path $TestDrive -InitializeExisting -WarningAction SilentlyContinue -WarningVariable warnings | Out-Null
 
-        Get-Content -Path $agentsPath -Raw | Should -Be 'existing agents content'
+        # The existing file is not overwritten; the workflow block is appended
+        # non-destructively (the user's content is preserved).
+        $agents = Get-Content -Path $agentsPath -Raw
+        $agents | Should -Match 'existing agents content'
+        $agents | Should -Match 'wayforge:workflow:start'
         Join-Path -Path $testProjectPath -ChildPath '.gitignore' | Should -Exist
         $warnings | Should -Not -BeNullOrEmpty
     }

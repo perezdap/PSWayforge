@@ -144,6 +144,15 @@ function New-WayforgeProject {
             -RelativePath (Join-Path '.workflow' 'schemas' 'plan.json') `
             -TemplatePath (Join-Path $moduleRoot 'templates' 'schema.plan.json')
 
+        # Project the workflow's steps into AGENTS.md (guidance). Non-fatal, and
+        # non-destructive: it only touches its own managed marker block.
+        try {
+            Update-WayforgeAgentsFile -ProjectPath $projectRoot | Out-Null
+        }
+        catch {
+            Write-Warning "Could not render the workflow into AGENTS.md: $($_.Exception.Message)"
+        }
+
         Initialize-WayforgeGitRepository -ProjectRoot $projectRoot
 
         if ($DetectHarness) {
