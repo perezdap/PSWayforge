@@ -101,4 +101,27 @@ Describe 'Invoke-WayforgeGate' {
         $r.Blocked   | Should -BeTrue
         $r.Results.Id | Should -Contain 'wayforge-engine-error'
     }
+
+    Context 'default template code scope (broad + exclusions)' {
+        BeforeEach {
+            $script:ScopeProj = Join-Path $TestDrive ('scope_' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path (Join-Path $ScopeProj '.workflow/definitions'), (Join-Path $ScopeProj '.workflow/schemas') -Force | Out-Null
+            Copy-Item (Join-Path $ModuleRoot 'templates/workflow.default.yaml') (Join-Path $ScopeProj '.workflow/definitions/default.yaml')
+            Copy-Item (Join-Path $ModuleRoot 'templates/schema.plan.json')      (Join-Path $ScopeProj '.workflow/schemas/plan.json')
+        }
+
+        It 'fires the plan gate on flat/root and non-standard source paths' {
+            foreach ($path in 'main.go', 'Program.cs', 'cmd/app/main.go', 'internal/x.py') {
+                $r = Invoke-WayforgeGate -Stage pre-commit -AsHook git -ProjectPath $ScopeProj -ChangeSet @($path)
+                ($r.Results | Where-Object Id -eq 'plan-before-build').Status | Should -Be 'fail' -Because "$path is code"
+            }
+        }
+
+        It 'skips the plan gate for excluded Wayforge machinery' {
+            foreach ($path in '.workflow/hooks/gate.ps1', '.opencode/plugins/wayforge-gate.js', '.pi/extensions/wayforge-gate.ts') {
+                $r = Invoke-WayforgeGate -Stage pre-commit -AsHook git -ProjectPath $ScopeProj -ChangeSet @($path)
+                ($r.Results | Where-Object Id -eq 'plan-before-build').Status | Should -Be 'skip' -Because "$path is excluded"
+            }
+        }
+    }
 }

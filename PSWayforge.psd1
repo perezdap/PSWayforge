@@ -1,6 +1,6 @@
 @{
     RootModule           = 'PSWayforge.psm1'
-    ModuleVersion        = '0.2.2'
+    ModuleVersion        = '0.3.0'
     GUID                 = 'cc6c71de-c415-442a-9170-9589bfa5eb0a'
     Author               = 'PSWayforge Contributors'
     CompanyName          = ''
@@ -30,7 +30,7 @@
             LicenseUri               = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
             ProjectUri               = 'https://github.com/perezdap/PSWayforge'
             RequireLicenseAcceptance = $false
-            ReleaseNotes             = '0.2.2: Re-syncing the Claude adapter now purges stale Write(path) deny rules left by older versions (the merge previously preserved them). 0.2.1: Fix hook config emitting a single matcher as a JSON object instead of an array, and Edit(path)-only deny rules. 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
+            ReleaseNotes             = '0.3.0: Scopes support !-prefixed exclude globs; the default code scope now matches source by extension across any layout (flat/root, cmd/pkg/internal, etc.) while excluding Wayforge''s own tree, so the plan gate is no longer a no-op on non-standard layouts. 0.2.2: Purge stale Write(path) deny rules on re-sync. 0.2.1: Fix hook JSON array shape + Edit-only deny rules. 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
         }
     }
 }
