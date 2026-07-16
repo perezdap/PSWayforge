@@ -25,9 +25,11 @@
     AliasesToExport      = @()
     PrivateData          = @{
         PSData = @{
-            Tags       = @('agent', 'workspace', 'scaffold', 'workflow', 'ai')
-            LicenseUri = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
-            ProjectUri = 'https://github.com/perezdap/PSWayforge'
+            Tags                     = @('agent', 'workspace', 'scaffold', 'workflow', 'ai', 'enforcement', 'guardrails', 'hooks')
+            LicenseUri               = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
+            ProjectUri               = 'https://github.com/perezdap/PSWayforge'
+            RequireLicenseAcceptance = $false
+            ReleaseNotes             = 'Initial release: workflow gate engine, git + CI enforcement floors, and adapters for Claude, Codex, Grok, Copilot, Cursor, opencode, pi, and Kimi, with harness detection.'
         }
     }
 }
