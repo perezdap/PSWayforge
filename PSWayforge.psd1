@@ -1,6 +1,6 @@
 @{
     RootModule           = 'PSWayforge.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '0.2.0'
     GUID                 = 'cc6c71de-c415-442a-9170-9589bfa5eb0a'
     Author               = 'PSWayforge Contributors'
     CompanyName          = ''
@@ -10,6 +10,7 @@
     CompatiblePSEditions = @('Core')
     FunctionsToExport    = @(
         'New-WayforgeProject'
+        'Initialize-WayforgeProject'
         'Invoke-WayforgeHook'
         'Test-WayforgeSchema'
         'Get-WayforgeWorkflow'
@@ -29,7 +30,7 @@
             LicenseUri               = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
             ProjectUri               = 'https://github.com/perezdap/PSWayforge'
             RequireLicenseAcceptance = $false
-            ReleaseNotes             = 'Initial release: workflow gate engine, git + CI enforcement floors, and adapters for Claude, Codex, Grok, Copilot, Cursor, opencode, pi, and Kimi, with harness detection.'
+            ReleaseNotes             = '0.2.0: Add Initialize-WayforgeProject to apply Wayforge to an existing project in place. 0.1.0: workflow gate engine, git + CI enforcement floors, adapters for Claude/Codex/Grok/Copilot/Cursor/opencode/pi/Kimi, and harness detection.'
         }
     }
 }

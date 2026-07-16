@@ -22,8 +22,11 @@ Install-Module PSWayforge
 ## Quick start
 
 ```powershell
-# Scaffold an enforced workspace, wiring every agent you have installed
+# Scaffold a new enforced workspace, wiring every agent you have installed
 New-WayforgeProject -Name MyApp -Path . -DetectHarness
+
+# ...or add Wayforge to an existing repository, in place (non-destructive)
+Initialize-WayforgeProject -DetectHarness
 ```
 
 That creates a git repo where — for example — an agent (or a human) **cannot land code without a plan** and **cannot touch `.env`**, enforced through each agent's own hooks *and* the git hooks.
@@ -76,7 +79,8 @@ All share one `gate.ps1` shim. `Get-WayforgeHarness` detects what's installed; `
 
 | Command | Purpose |
 |---|---|
-| `New-WayforgeProject` | Scaffold an enforced workspace |
+| `New-WayforgeProject` | Scaffold a new enforced workspace |
+| `Initialize-WayforgeProject` | Apply Wayforge to an existing project, in place |
 | `Invoke-WayforgeGate` | Evaluate a workflow's gates for a stage (the engine) |
 | `Sync-WayforgeHarness` | Project gates into per-harness config |
 | `Register-WayforgeHooks` | Install the git-hook floor (`core.hooksPath`) |
