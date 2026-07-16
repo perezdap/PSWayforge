@@ -49,6 +49,15 @@ Describe 'New-WayforgeProject' {
         Join-Path -Path $TestDrive -ChildPath 'WayforgeTestProject/.workflow/schemas/example.json' | Should -Exist
     }
 
+    It 'gives the example skill the name and description frontmatter that skill loaders require' {
+        New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive -WarningAction SilentlyContinue | Out-Null
+        $skill = Get-Content (Join-Path $TestDrive 'WayforgeTestProject/.agents/skills/example/SKILL.md') -Raw
+
+        $skill | Should -Match '(?s)\A---\r?\n.*\r?\n---\r?\n'
+        $skill | Should -Match '(?m)^name:\s*example\s*$'
+        $skill | Should -Match '(?m)^description:\s*\S'
+    }
+
     It 'creates a .gitignore and initializes a git repository when git is available' {
         New-WayforgeProject -Name 'WayforgeTestProject' -Path $TestDrive
 
