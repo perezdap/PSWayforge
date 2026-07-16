@@ -36,6 +36,10 @@ function New-WayforgeProject {
         so the same gates enforce at merge time. Requires branch protection to
         become a required check.
 
+    .PARAMETER DetectHarness
+        Ignore -Harness and instead wire every harness detected as installed on
+        this machine (via Get-WayforgeHarness). Falls back to claude if none.
+
     .EXAMPLE
         New-WayforgeProject -Name MyProject -Path C:\Projects
 
@@ -63,7 +67,9 @@ function New-WayforgeProject {
 
         [switch]$SkipEnforcement,
 
-        [switch]$WithCI
+        [switch]$WithCI,
+
+        [switch]$DetectHarness
     )
 
     begin {
@@ -139,6 +145,17 @@ function New-WayforgeProject {
             -TemplatePath (Join-Path $moduleRoot 'templates' 'schema.plan.json')
 
         Initialize-WayforgeGitRepository -ProjectRoot $projectRoot
+
+        if ($DetectHarness) {
+            $installed = @(Get-WayforgeHarness -ProjectPath $projectRoot | Where-Object { $_.Installed } | ForEach-Object { $_.Name })
+            if ($installed) {
+                $Harness = $installed
+            }
+            else {
+                Write-Warning 'No harnesses detected as installed; using claude.'
+                $Harness = @('claude')
+            }
+        }
 
         # Wire the enforcement layer. A failure here never fails the scaffold —
         # the workspace is already usable; enforcement can be added later.
