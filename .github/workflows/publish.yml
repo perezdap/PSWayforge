@@ -1,0 +1,36 @@
+name: publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify manifest
+        shell: pwsh
+        run: Test-ModuleManifest ./PSWayforge.psd1
+
+      - name: Stage module files
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'PSWayforge'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -Path PSWayforge.psd1, PSWayforge.psm1, LICENSE, README.md -Destination $stage
+          Copy-Item -Path public, private, templates -Destination $stage -Recurse
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Publish to PowerShell Gallery
+        shell: pwsh
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
+        run: |
+          if (-not $env:PSGALLERY_API_KEY) {
+            throw 'PSGALLERY_API_KEY secret is not set. Add it in repo Settings > Secrets and variables > Actions.'
+          }
+          Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
+          Publish-Module -Path $env:STAGE -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
