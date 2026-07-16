@@ -171,6 +171,76 @@ Describe 'Sync-WayforgeHarness kimi' {
     }
 }
 
+Describe 'event normalization (per-harness payload shapes)' {
+    # The default no-edit-dotenv gate: forbid tool [edit, write], path **/.env.
+    It 'denies an <Name> edit of .env' -ForEach @(
+        @{ Name = 'Claude';      Hook = 'claude';   Event = '{"tool_name":"Edit","tool_input":{"file_path":".env"}}' }
+        @{ Name = 'pi';          Hook = 'pi';       Event = '{"tool_name":"edit","tool_input":{"path":".env"}}' }
+        @{ Name = 'opencode';    Hook = 'opencode'; Event = '{"tool_name":"edit","tool_input":{"filePath":".env"}}' }
+        @{ Name = 'Copilot CLI'; Hook = 'copilot';  Event = '{"toolName":"edit","toolArgs":{"path":".env"}}' }
+    ) {
+        $p = Join-Path $TestDrive ("norm_" + $Hook); New-HProject -Path $p
+        $r = Invoke-WayforgeGate -Stage pre-tool -AsHook $Hook -EventJson $Event -ProjectPath $p
+        $r.Blocked | Should -BeTrue
+        ($r.Results | Where-Object Id -eq 'no-edit-dotenv').Status | Should -Be 'fail'
+    }
+
+    It 'allows a read of .env (tool restriction honored across shapes)' {
+        $p = Join-Path $TestDrive 'norm_read'; New-HProject -Path $p
+        $r = Invoke-WayforgeGate -Stage pre-tool -AsHook opencode -EventJson '{"tool_name":"read","tool_input":{"filePath":".env"}}' -ProjectPath $p
+        $r.Blocked | Should -BeFalse
+    }
+}
+
+Describe 'Kimi permission-rule projection' {
+    It 'only projects unconditional, blocking, pre-tool path forbids' {
+        $p = Join-Path $TestDrive 'kimifilter'
+        New-Item -ItemType Directory -Path (Join-Path $p '.workflow/definitions') -Force | Out-Null
+        @'
+apiVersion: wayforge/v2
+name: default
+scopes:
+  code:
+    - "src/**"
+gates:
+  - id: block-env-pretool
+    on:
+      - pre-tool
+    when: always
+    severity: block
+    check:
+      forbid:
+        path:
+          - "**/.env"
+  - id: block-secret-commit-only
+    on:
+      - pre-commit
+    when: always
+    severity: block
+    check:
+      forbid:
+        path:
+          - "**/secret.txt"
+  - id: block-key-conditional
+    on:
+      - pre-tool
+    when: changes_touch(code)
+    severity: block
+    check:
+      forbid:
+        path:
+          - "**/*.key"
+'@ | Set-Content (Join-Path $p '.workflow/definitions/default.yaml') -Encoding utf8NoBOM
+
+        Sync-WayforgeHarness -Harness kimi -ProjectPath $p -WarningAction SilentlyContinue | Out-Null
+        $c = Get-Content (Join-Path $p '.workflow/harness/kimi.config.toml') -Raw
+
+        $c | Should -Match 'Edit\(\*\*/\.env\)'      # unconditional pre-tool -> projected
+        $c | Should -Not -Match 'secret\.txt'        # pre-commit only -> hook-only
+        $c | Should -Not -Match '\*\.key'            # conditional -> hook-only
+    }
+}
+
 Describe 'Sync-WayforgeHarness multi' {
     It 'syncs several harnesses at once and shares one gate shim' {
         $p = Join-Path $TestDrive 'multi'; New-HProject -Path $p

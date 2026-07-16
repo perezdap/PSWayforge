@@ -14,8 +14,19 @@ function Write-WayforgeKimiAdapter {
     $set    = Get-WayforgeGateSet -Root $ProjectRoot -WorkflowName $WorkflowName
     $stages = Get-WayforgeStages -Gates $set.Gates
 
+    # The PreToolUse hook is the source of truth: it evaluates the complete
+    # Wayforge model (on/when/severity/all forbid dimensions). Static permission
+    # rules are emitted only as fail-closed defense-in-depth, and only for forbids
+    # Kimi can represent EXACTLY: unconditional (when: always), blocking, pre-tool
+    # path guardrails. Anything conditional or non-pre-tool stays hook-only, so we
+    # never broaden a gate's semantics into an always-active project denial.
     $rules = [System.Collections.Generic.List[string]]::new()
     foreach ($gate in $set.Gates) {
+        $on       = @(Get-WayforgeField $gate 'on')
+        $when     = Get-WayforgeField $gate 'when' 'always'
+        $severity = Get-WayforgeField $gate 'severity' 'block'
+        if (('pre-tool' -notin $on) -or ($when -ne 'always') -or ($severity -ne 'block')) { continue }
+
         $forbid = Get-WayforgeField (Get-WayforgeField $gate 'check') 'forbid'
         if ($forbid) {
             $paths = @(Get-WayforgeField $forbid 'path' | Where-Object { $_ })

@@ -223,9 +223,14 @@ function Get-WayforgeActionContext {
         Parses a harness event payload into { Paths, ToolName, Command } for the
         pre-tool / stop stages.
     .DESCRIPTION
-        An absent payload yields an empty context. A non-empty but malformed
-        payload throws, so the engine's outer handler fails closed (deny) instead
-        of skipping gates on an empty changeset (fail-open).
+        This is the single event-normalization boundary before the gate engine.
+        Harnesses use different field names for the same concepts, so it accepts
+        all known variants: the tool name (tool_name / toolName), the arguments
+        container (tool_input / toolArgs / tool_args / input), the file path
+        (file_path / filePath / path, plus multi-file arrays), and the command
+        (in the args container or top-level, as Cursor's beforeShellExecution
+        sends it). An absent payload yields an empty context; a non-empty but
+        malformed payload throws, so the engine fails closed (deny).
     #>
     param([string] $EventJson, [string] $Root)
 
@@ -233,24 +238,44 @@ function Get-WayforgeActionContext {
     if ([string]::IsNullOrWhiteSpace($EventJson)) { return $context }
 
     $ev = $EventJson | ConvertFrom-Json          # malformed -> throw -> fail-closed
-    $context.ToolName = $ev.tool_name
-    $context.Command  = $ev.tool_input.command
 
-    # Cursor's beforeShellExecution puts the command at the top level (no tool_input).
+    $context.ToolName = if ($ev.tool_name) { $ev.tool_name } elseif ($ev.toolName) { $ev.toolName } else { $null }
+
+    # The tool's arguments live under different keys across harnesses.
+    $toolArgs = $null
+    foreach ($key in 'tool_input', 'toolArgs', 'tool_args', 'input') {
+        $value = Get-WayforgeField $ev $key
+        if ($null -ne $value) { $toolArgs = $value; break }
+    }
+
+    $rawPaths = [System.Collections.Generic.List[string]]::new()
+    if ($toolArgs) {
+        $context.Command = Get-WayforgeField $toolArgs 'command'
+        foreach ($key in 'file_path', 'filePath', 'path', 'filepath') {
+            $value = Get-WayforgeField $toolArgs $key
+            if ($value) { $rawPaths.Add([string]$value) | Out-Null }
+        }
+        foreach ($key in 'file_paths', 'filePaths', 'paths', 'files') {
+            $value = Get-WayforgeField $toolArgs $key
+            if ($value) { foreach ($item in @($value)) { if ($item) { $rawPaths.Add([string]$item) | Out-Null } } }
+        }
+    }
+
+    # Cursor's beforeShellExecution puts the command at the top level (no args container).
     if (-not $context.Command -and $ev.command) {
         $context.Command = $ev.command
         if (-not $context.ToolName) { $context.ToolName = 'Bash' }
     }
 
-    $fp = $ev.tool_input.file_path
-    if ($fp) {
-        $rel = $fp -replace '\\', '/'
+    if ($rawPaths.Count -gt 0) {
         $rootNorm = ($Root -replace '\\', '/').TrimEnd('/') + '/'
-        if ($rel.StartsWith($rootNorm, [StringComparison]::OrdinalIgnoreCase)) {
-            $rel = $rel.Substring($rootNorm.Length)
-        }
-        $context.Paths = @($rel)
+        $context.Paths = @($rawPaths | ForEach-Object {
+                $rel = $_ -replace '\\', '/'
+                if ($rel.StartsWith($rootNorm, [StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($rootNorm.Length) }
+                $rel
+            })
     }
+
     return $context
 }
 
