@@ -3,6 +3,7 @@ name: publish
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -32,5 +33,7 @@ jobs:
           if (-not $env:PSGALLERY_API_KEY) {
             throw 'PSGALLERY_API_KEY secret is not set. Add it in repo Settings > Secrets and variables > Actions.'
           }
-          Install-PackageProvider -Name NuGet -Force -Scope CurrentUser | Out-Null
-          Publish-Module -Path $env:STAGE -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
+          if (-not (Get-Command Publish-PSResource -ErrorAction SilentlyContinue)) {
+            Install-Module Microsoft.PowerShell.PSResourceGet -Force -Scope CurrentUser -AllowClobber
+          }
+          Publish-PSResource -Path $env:STAGE -Repository PSGallery -ApiKey $env:PSGALLERY_API_KEY -Verbose
