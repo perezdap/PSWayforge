@@ -1,6 +1,6 @@
 @{
     RootModule           = 'PSWayforge.psm1'
-    ModuleVersion        = '0.2.1'
+    ModuleVersion        = '0.2.2'
     GUID                 = 'cc6c71de-c415-442a-9170-9589bfa5eb0a'
     Author               = 'PSWayforge Contributors'
     CompanyName          = ''
@@ -30,7 +30,7 @@
             LicenseUri               = 'https://github.com/perezdap/PSWayforge/blob/main/LICENSE'
             ProjectUri               = 'https://github.com/perezdap/PSWayforge'
             RequireLicenseAcceptance = $false
-            ReleaseNotes             = '0.2.1: Fix Claude/Codex/Cursor hook config emitting a single matcher as a JSON object instead of an array (Claude ignored the hook); Claude/Kimi deny rules now use Edit(path) only (Write(path) is not a valid rule). 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
+            ReleaseNotes             = '0.2.2: Re-syncing the Claude adapter now purges stale Write(path) deny rules left by older versions (the merge previously preserved them). 0.2.1: Fix hook config emitting a single matcher as a JSON object instead of an array, and Edit(path)-only deny rules. 0.2.0: Add Initialize-WayforgeProject. 0.1.0: initial release.'
         }
     }
 }

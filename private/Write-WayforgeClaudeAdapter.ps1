@@ -72,8 +72,15 @@ function Write-WayforgeClaudeAdapter {
 
     if ($denies.Count -gt 0) {
         if ($settings['permissions'] -isnot [System.Collections.IDictionary]) { $settings['permissions'] = @{} }
+        # Purge stale Write(path) rules that our Edit(path) rules now supersede.
+        # Older versions (< 0.2.1) emitted Write(path), which Claude ignores and
+        # warns about; the merge would otherwise preserve them forever.
+        $superseded = @($denies | Where-Object { $_ -like 'Edit(*' } | ForEach-Object { $_ -replace '^Edit\(', 'Write(' })
         $merged = [System.Collections.Generic.List[string]]::new()
-        foreach ($d in @($settings['permissions']['deny'])) { if ($d -and -not $merged.Contains($d)) { $merged.Add($d) | Out-Null } }
+        foreach ($d in @($settings['permissions']['deny'])) {
+            if (-not $d -or $superseded -contains $d) { continue }
+            if (-not $merged.Contains($d)) { $merged.Add($d) | Out-Null }
+        }
         foreach ($d in $denies) { if (-not $merged.Contains($d)) { $merged.Add($d) | Out-Null } }
         $settings['permissions']['deny'] = $merged.ToArray()
     }
